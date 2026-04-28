@@ -24,6 +24,13 @@ actions:
     low: []
     medium:
     - log
+auth:
+  enabled: false
+  google_client_id: ""
+  policy_url: ""
+  session_ttl_minutes: 15
+  validation_interval_seconds: 60
+  request_timeout_seconds: 8
 app:
   environment: demo
 camera:

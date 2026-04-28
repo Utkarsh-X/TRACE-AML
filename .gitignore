@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.pytest-cache-local/
 .ruff_cache/
 .coverage
 .coverage.*
@@ -70,6 +71,7 @@ config.local.yaml
 # Temporary files
 *.tmp
 *.temp
+tmp/
 
 # Inpiration Folder
 color_theme_inpiration/
@@ -80,6 +82,7 @@ whatsapp-bridge/
 
 # Run logs and test data
 debug.log
+electron/electron-smoke*.log
 output/
 wordreportfiles/
 portable_data_smoke/

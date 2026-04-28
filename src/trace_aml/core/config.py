@@ -38,7 +38,7 @@ class CameraSettings(BaseModel):
     @classmethod
     def validate_device_index(cls, value: int) -> int:
         if value != 0:
-            raise ValueError("For v3 MVP, only built-in webcam index 0 is supported.")
+            raise ValueError("For v4 MVP, only built-in webcam index 0 is supported.")
         return value
 
 
@@ -267,6 +267,30 @@ class VaultSettings(BaseModel):
     index_dir: str = f"{_DATA_ROOT}/index"
 
 
+class AuthSettings(BaseModel):
+    enabled: bool = False
+    google_client_id: str = ""
+    policy_url: str = ""
+    session_ttl_minutes: int = 15
+    validation_interval_seconds: int = 60
+    request_timeout_seconds: int = 8
+    cookie_name: str = "trace_aml_session"
+
+    @field_validator("session_ttl_minutes")
+    @classmethod
+    def _validate_session_ttl(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("session_ttl_minutes must be at least 1")
+        return value
+
+    @field_validator("validation_interval_seconds", "request_timeout_seconds")
+    @classmethod
+    def _validate_positive_seconds(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("auth timing values must be at least 1 second")
+        return value
+
+
 # ── Notification Channel Settings ──────────────────────────────────────────────
 
 class EmailSettings(BaseModel):
@@ -347,6 +371,7 @@ class Settings(BaseSettings):
     notifications: NotificationsSettings = Field(default_factory=NotificationsSettings)
     store: StoreSettings = Field(default_factory=StoreSettings)
     vault: VaultSettings = Field(default_factory=VaultSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     liveness: LivenessSettings = Field(default_factory=LivenessSettings)
     gpu: GpuSettings = Field(default_factory=GpuSettings)
@@ -364,11 +389,57 @@ def load_yaml(path: Path) -> dict:
     return loaded
 
 
+def _coerce_env_value(value: str) -> object:
+    try:
+        return yaml.safe_load(value)
+    except Exception:
+        return value
+
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    merged = dict(base)
+    for key, value in overlay.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_env_overrides(prefix: str = "TRACE_AML_", nested_delimiter: str = "__") -> dict:
+    overrides: dict[str, object] = {}
+
+    for raw_key, raw_value in os.environ.items():
+        if not raw_key.startswith(prefix):
+            continue
+
+        trimmed = raw_key[len(prefix):]
+        if not trimmed:
+            continue
+
+        parts = [segment.strip().lower() for segment in trimmed.split(nested_delimiter) if segment.strip()]
+        if not parts:
+            continue
+
+        cursor: dict[str, object] = overrides
+        for segment in parts[:-1]:
+            existing = cursor.get(segment)
+            if not isinstance(existing, dict):
+                existing = {}
+                cursor[segment] = existing
+            cursor = existing
+        cursor[parts[-1]] = _coerce_env_value(raw_value)
+
+    return overrides
+
+
 def load_settings(config_path: str | Path | None = None) -> Settings:
     path = Path(config_path or os.getenv("TRACE_AML_CONFIG", "config/config.yaml"))
     raw = load_yaml(path)
+    merged = _deep_merge(raw, _load_env_overrides())
     try:
-        settings = Settings(**raw)
+        settings = Settings(**merged)
     except Exception as exc:  # pragma: no cover - pydantic supplies details.
         raise ConfigError(str(exc)) from exc
     settings.runtime_config_path = str(path.resolve())

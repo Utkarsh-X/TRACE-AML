@@ -902,7 +902,7 @@ class RecognitionSession:
 
         prev = time.time()
         fps = 0.0
-        title = "TRACE-AML v3 | Press q to stop"
+        title = "TRACE-AML v4 | Press q to stop"
 
         try:
             while True:

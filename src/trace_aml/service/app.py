@@ -8,6 +8,7 @@ from typing import Any
 import os
 import base64
 import sys
+from urllib.parse import quote
 
 from fastapi import Query, Request
 from fastapi.responses import FileResponse
@@ -67,17 +68,34 @@ def _resolve_frontend_dir() -> Path | None:
     return None
 
 
+def _build_auth_runtime(settings: Settings) -> dict[str, Any]:
+    from trace_aml.auth.google_identity import GoogleIdentityVerifier
+    from trace_aml.auth.policy import RemoteAuthPolicyClient
+    from trace_aml.auth.session import DesktopSessionManager
+
+    policy_client = RemoteAuthPolicyClient(
+        policy_url=settings.auth.policy_url,
+        timeout_seconds=settings.auth.request_timeout_seconds,
+    )
+    return {
+        "identity_verifier": GoogleIdentityVerifier(settings.auth.google_client_id),
+        "policy_client": policy_client,
+        "session_manager": DesktopSessionManager(settings.auth, policy_client=policy_client),
+    }
+
+
 def create_service_app(
     settings: Settings,
     store: VectorStore,
     stream_publisher: EventStreamPublisher | None = None,
     session: Any | None = None,  # RecognitionSession instance (for camera control)
+    auth_runtime: Any | None = None,
 ) -> Any:
     """Create FastAPI app lazily so CLI stays usable without web deps."""
     try:
         from fastapi import FastAPI, HTTPException, Query, Request
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import StreamingResponse
+        from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:  # pragma: no cover - environment-dependent.
         raise RuntimeError(
@@ -86,6 +104,57 @@ def create_service_app(
 
     publisher = stream_publisher or NullEventStreamPublisher()
     read_models = IntelligenceReadModelService(store, publisher)
+    auth_runtime = auth_runtime or _build_auth_runtime(settings)
+    auth_enabled = settings.auth.enabled
+    auth_ready = bool(settings.auth.google_client_id.strip() and settings.auth.policy_url.strip())
+    auth_cookie_name = settings.auth.cookie_name
+
+    def _get_auth_runtime_item(name: str) -> Any:
+        if isinstance(auth_runtime, dict):
+            return auth_runtime[name]
+        return getattr(auth_runtime, name)
+
+    def _public_api_path(path: str) -> bool:
+        return path in {
+            "/",
+            "/health",
+            "/openapi.json",
+            "/docs",
+            "/docs/oauth2-redirect",
+            "/redoc",
+            "/api/v1/auth/config",
+            "/api/v1/auth/google",
+            "/api/v1/auth/session",
+            "/api/v1/auth/logout",
+        }
+
+    def _public_ui_path(path: str) -> bool:
+        return (
+            path.startswith("/ui/auth/")
+            or path.startswith("/ui/shared/")
+        )
+
+    def _protected_api_path(path: str) -> bool:
+        return path.startswith("/api/v1/") and not _public_api_path(path)
+
+    def _protected_ui_path(path: str) -> bool:
+        return path == "/ui" or path == "/ui/" or path.startswith("/ui/")
+
+    def _assert_auth_ready() -> None:
+        if auth_enabled and not auth_ready:
+            raise HTTPException(
+                status_code=503,
+                detail="Desktop authorization is enabled but this build is missing Google auth configuration.",
+            )
+
+    def _require_session(request: Request) -> Any:
+        from trace_aml.auth.session import AuthSessionError
+
+        session_id = request.cookies.get(auth_cookie_name)
+        try:
+            return _get_auth_runtime_item("session_manager").validate_session(session_id)
+        except AuthSessionError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     class _NoCacheStaticFiles(StaticFiles):
         def file_response(
@@ -122,14 +191,54 @@ def create_service_app(
         description="TRACE-AML UI/API bridge over intelligence read models.",
         lifespan=_lifespan,
     )
-    # Dev-friendly: allow the static mockup to call the API with ?api=http://127.0.0.1:8080
-    # without a reverse proxy (EventSource + fetch need CORS when origins differ).
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    if not auth_enabled:
+        # Dev-friendly: allow the static mockup to call the API with
+        # ?api=http://127.0.0.1:8080 without a reverse proxy.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    @app.middleware("http")
+    async def _desktop_auth_gate(request: Request, call_next: Any) -> Any:
+        if not auth_enabled:
+            return await call_next(request)
+
+        path = request.url.path
+        if request.method.upper() == "OPTIONS" or _public_api_path(path) or _public_ui_path(path):
+            return await call_next(request)
+
+        if not (_protected_api_path(path) or _protected_ui_path(path)):
+            return await call_next(request)
+
+        session_id = request.cookies.get(auth_cookie_name)
+        try:
+            _get_auth_runtime_item("session_manager").validate_session(session_id)
+        except Exception as exc:
+            from trace_aml.auth.session import AuthSessionError
+
+            auth_error = exc if isinstance(exc, AuthSessionError) else AuthSessionError("Authentication is required.")
+            if _protected_api_path(path):
+                response = JSONResponse(
+                    {"detail": auth_error.detail, "code": auth_error.code},
+                    status_code=auth_error.status_code,
+                )
+                response.delete_cookie(auth_cookie_name)
+                return response
+
+            requested = path
+            if request.url.query:
+                requested = f"{requested}?{request.url.query}"
+            response = RedirectResponse(
+                url=f"/ui/auth/index.html?next={quote(requested, safe='')}",
+                status_code=307,
+            )
+            response.delete_cookie(auth_cookie_name)
+            return response
+
+        return await call_next(request)
 
     person_router = create_person_router(settings, store)
     app.include_router(person_router)
@@ -263,6 +372,93 @@ def create_service_app(
     def health() -> dict[str, Any]:
         snapshot = read_models.get_live_ops_snapshot(entity_limit=3, incident_limit=3, alert_limit=3)
         return snapshot.system_health.model_dump(mode="json")
+
+    class GoogleCredentialPayload(BaseModel):
+        credential: str
+
+    @app.get("/api/v1/auth/config")
+    def auth_config() -> dict[str, Any]:
+        return {
+            "enabled": auth_enabled,
+            "ready": auth_ready,
+            "provider": "google",
+            "client_id": settings.auth.google_client_id if auth_enabled else "",
+            "session_ttl_minutes": settings.auth.session_ttl_minutes,
+            "validation_interval_seconds": settings.auth.validation_interval_seconds,
+            "offline_required": auth_enabled,
+            "message": (
+                "Sign in with an approved Google account to unlock this desktop build."
+                if auth_enabled and auth_ready
+                else "Desktop authorization is disabled for this build."
+                if not auth_enabled
+                else "Desktop authorization is enabled, but Google client ID or policy URL is missing."
+            ),
+        }
+
+    @app.post("/api/v1/auth/google")
+    def auth_google(payload: GoogleCredentialPayload) -> Any:
+        from trace_aml.auth.google_identity import GoogleIdentityVerificationError
+        from trace_aml.auth.session import AuthSessionError
+
+        _assert_auth_ready()
+
+        verifier = _get_auth_runtime_item("identity_verifier")
+        session_manager = _get_auth_runtime_item("session_manager")
+
+        try:
+            identity = verifier.verify(payload.credential)
+            record = session_manager.issue_session(identity)
+        except GoogleIdentityVerificationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except AuthSessionError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+        response = JSONResponse(
+            {
+                "authenticated": True,
+                "auth_enabled": True,
+                "user": record.display,
+                "expires_at": record.expires_at.isoformat(),
+            }
+        )
+        response.set_cookie(
+            key=auth_cookie_name,
+            value=record.session_id,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+            max_age=settings.auth.session_ttl_minutes * 60,
+            path="/",
+        )
+        return response
+
+    @app.get("/api/v1/auth/session")
+    def auth_session(request: Request) -> dict[str, Any]:
+        if not auth_enabled:
+            return {
+                "auth_enabled": False,
+                "authenticated": False,
+                "user": None,
+            }
+
+        _assert_auth_ready()
+        record = _require_session(request)
+        return {
+            "auth_enabled": True,
+            "authenticated": True,
+            "user": record.display,
+            "expires_at": record.expires_at.isoformat(),
+            "validation_interval_seconds": settings.auth.validation_interval_seconds,
+        }
+
+    @app.post("/api/v1/auth/logout")
+    def auth_logout(request: Request) -> Any:
+        if auth_enabled:
+            _get_auth_runtime_item("session_manager").revoke_session(request.cookies.get(auth_cookie_name))
+
+        response = JSONResponse({"status": "signed_out"})
+        response.delete_cookie(auth_cookie_name, path="/")
+        return response
 
     @app.get("/api/v1/config")
     def get_config() -> dict[str, Any]:
@@ -1448,7 +1644,7 @@ def create_service_app(
         @app.get("/ui/")
         def _ui_redirect() -> RedirectResponse:
             return RedirectResponse(
-                url="/ui/live_ops/index.html",
+                url="/ui/auth/index.html" if auth_enabled else "/ui/live_ops/index.html",
                 headers={
                     "Cache-Control": "no-store, no-cache, must-revalidate",
                     "Pragma": "no-cache",

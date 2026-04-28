@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>TRACE-AML | Authorization</title>
+  <link rel="stylesheet" href="../shared/tailwind-compiled.css" />
+  <link rel="stylesheet" href="../shared/base.css" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e0e0e;
+      --surface: #131313;
+      --surface-low: #1b1b1b;
+      --surface-high: #2a2a2a;
+      --outline: #474747;
+      --muted: #919191;
+      --text: #e2e2e2;
+      --strong: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.42) 100%),
+        linear-gradient(180deg, #0f0f0f 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: "Inter", system-ui, sans-serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      opacity: 0.03;
+      background-image: radial-gradient(#ffffff 0.5px, transparent 0.5px);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+
+    .auth-shell {
+      min-height: 100vh;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 1.2rem 1.75rem 1.75rem;
+    }
+
+    .auth-topbar,
+    .auth-footer {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .auth-topbar {
+      padding: 0.1rem 0 0;
+    }
+
+    .auth-footer {
+      padding: 0.45rem 0 0;
+    }
+
+    .auth-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .auth-row--end {
+      justify-content: flex-end;
+    }
+
+    .auth-dot {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--strong);
+      animation: auth-pulse 1.4s ease-in-out infinite;
+    }
+
+    .auth-mono {
+      font-family: "JetBrains Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+    }
+
+    .auth-tiny {
+      font-size: 0.62rem;
+    }
+
+    .auth-main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 0 2rem;
+    }
+
+    .auth-hero {
+      width: min(100%, 920px);
+      text-align: center;
+    }
+
+    .auth-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-size: 0.62rem;
+      margin-bottom: 1.35rem;
+    }
+
+    .auth-kicker::before,
+    .auth-kicker::after {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .auth-title {
+      margin: 0;
+      font-size: clamp(4rem, 9vw, 6.8rem);
+      line-height: 0.92;
+      font-weight: 900;
+      letter-spacing: -0.06em;
+      color: var(--strong);
+    }
+
+    .auth-subtitle {
+      margin: 1.15rem auto 0;
+      max-width: 45rem;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 0.98rem;
+      line-height: 1.82;
+    }
+
+    .auth-card {
+      width: min(100%, 620px);
+      margin: 2.7rem auto 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 56%),
+        rgba(255, 255, 255, 0.02);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.48);
+      overflow: hidden;
+    }
+
+    .auth-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.15rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.018);
+    }
+
+    .auth-card-body {
+      padding: 1.6rem 1.5rem 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    .auth-status {
+      margin: 0;
+      font-size: 1.55rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--strong);
+    }
+
+    .auth-detail {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.72;
+      font-size: 0.96rem;
+    }
+
+    .auth-button-host {
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .auth-note {
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.84rem;
+      line-height: 1.6;
+      font-family: "JetBrains Mono", monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .auth-shell[data-auth-tone="error"] .auth-status,
+    .auth-shell[data-auth-tone="ok"] .auth-status,
+    .auth-shell[data-auth-tone="neutral"] .auth-status {
+      color: var(--strong);
+    }
+
+    .auth-shell[data-auth-tone="error"] .auth-card {
+      border-color: rgba(255, 255, 255, 0.12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.034), transparent 56%),
+        rgba(255, 255, 255, 0.022);
+    }
+
+    .auth-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.8rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 999px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.64rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--strong);
+    }
+
+    .auth-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--strong);
+      opacity: 0.88;
+    }
+
+    @keyframes auth-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.42; }
+    }
+
+    @media (max-width: 860px) {
+      .auth-shell {
+        padding-inline: 1rem;
+      }
+
+      .auth-main {
+        padding-top: 2rem;
+      }
+
+      .auth-title {
+        font-size: clamp(3.2rem, 15vw, 5.2rem);
+      }
+
+      .auth-subtitle {
+        font-size: 0.92rem;
+      }
+
+      .auth-card-body {
+        padding-inline: 1.15rem;
+      }
+
+      .auth-topbar,
+      .auth-footer {
+        gap: 0.6rem;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .auth-row--end {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="auth-shell" data-auth-tone="neutral" id="auth-shell">
+    <header class="auth-topbar auth-mono auth-tiny">
+      <div class="auth-row">
+        <span>Session: Secure Access</span>
+        <span class="auth-dot" aria-hidden="true"></span>
+      </div>
+      <div class="auth-row auth-row--end">
+        <span>Node: Localhost</span>
+      </div>
+    </header>
+
+    <section class="auth-main">
+      <div class="auth-hero">
+        <div class="auth-kicker auth-mono">Desktop Authorization Layer</div>
+        <h1 class="auth-title">TRACE-AML</h1>
+        <p class="auth-subtitle">
+          This desktop build is locked to approved operator accounts. Google sign-in proves identity, while the backend revalidates access continuously against an owner-managed remote allowlist.
+        </p>
+
+        <section class="auth-card">
+          <div class="auth-card-head">
+            <span class="auth-mono auth-tiny">Operator Checkpoint</span>
+            <span class="auth-chip">Online Validation</span>
+          </div>
+          <div class="auth-card-body">
+            <h2 class="auth-status" id="auth-status">Checking desktop authorization</h2>
+            <p class="auth-detail" id="auth-detail">
+              Verifying whether this build requires sign-in and whether a local desktop session is already active.
+            </p>
+            <div class="auth-button-host" id="google-button"></div>
+            <p class="auth-note">
+              If your account is removed from the owner allowlist, this desktop session will be invalidated and the workspace will lock automatically.
+            </p>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <footer class="auth-footer auth-mono auth-tiny">
+      <div class="auth-row">
+        <span>Mode: Controlled Access</span>
+      </div>
+      <div class="auth-row auth-row--end">
+        <span>Offline Use: Disabled</span>
+      </div>
+    </footer>
+  </main>
+
+  <script src="../shared/trace_auth.js?v=20260428001"></script>
+  <script>
+    window.TraceAuth.bootstrapAuthPage({ defaultNext: "/ui/live_ops/index.html" });
+  </script>
+</body>
+</html>

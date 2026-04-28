@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "allowed_emails": [
+    "owner@example.com",
+    "tester@example.com"
+  ],
+  "message": "Access is restricted to approved Google accounts."
+}

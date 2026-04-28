@@ -1,6 +1,6 @@
 """Legacy entrypoint compatibility.
 
-TRACE-AML v3 official entrypoint:
+TRACE-AML v4 official entrypoint:
     trace-aml --help
 """
 

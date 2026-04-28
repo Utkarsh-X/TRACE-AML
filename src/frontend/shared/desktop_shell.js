@@ -17,9 +17,23 @@
     });
   }
 
+  function bindDesktopAuthGuard() {
+    if (document.body && document.body.dataset.skipAuthGuard === "true") {
+      return;
+    }
+
+    if (window.TraceAuth && typeof window.TraceAuth.protectPage === "function") {
+      window.TraceAuth.protectPage();
+    }
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bindDesktopExit, { once: true });
+    document.addEventListener("DOMContentLoaded", function () {
+      bindDesktopExit();
+      bindDesktopAuthGuard();
+    }, { once: true });
   } else {
     bindDesktopExit();
+    bindDesktopAuthGuard();
   }
 })();

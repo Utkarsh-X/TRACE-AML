@@ -1,6 +1,6 @@
 {
   "name": "trace-aml-desktop",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "description": "Electron desktop shell for TRACE-AML",
   "main": "main.js",
@@ -33,11 +33,11 @@
       "splash.html",
       "welcome.html",
       "renderer/**/*",
-      "../(1).ico"
+      "../w.ico"
     ],
     "extraResources": [
       {
-        "from": "../(1).ico",
+        "from": "../w.ico",
         "to": "app.ico"
       },
       {
@@ -61,7 +61,7 @@
       }
     ],
     "win": {
-      "icon": "../(1).ico",
+      "icon": "../w.ico",
       "signAndEditExecutable": false,
       "target": [
         "nsis",
@@ -70,9 +70,9 @@
     },
     "nsis": {
       "artifactName": "TRACE-AML-Setup-${version}-${arch}.${ext}",
-      "installerIcon": "../(1).ico",
-      "installerHeaderIcon": "../(1).ico",
-      "uninstallerIcon": "../(1).ico",
+      "installerIcon": "../w.ico",
+      "installerHeaderIcon": "../w.ico",
+      "uninstallerIcon": "../w.ico",
       "include": "build/installer.nsh"
     },
     "portable": {

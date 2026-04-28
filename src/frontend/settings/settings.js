@@ -24,7 +24,7 @@
   function loadSystemInfo() {
     TraceClient.probe().then(function (info) {
       if (!info) return;
-      if ($("core-version")) $("core-version").textContent = "7.0.0";
+      if ($("core-version")) $("core-version").textContent = "4.0.0";
       if ($("core-env")) $("core-env").textContent = normalizeEnvironmentLabel(info.environment);
     });
   }
@@ -974,7 +974,7 @@
           var health = healthResult && healthResult.status === "fulfilled" ? healthResult.value : null;
 
           if (info) {
-            if ($("core-version")) $("core-version").textContent = "7.0.0";
+            if ($("core-version")) $("core-version").textContent = "4.0.0";
             if ($("core-env")) $("core-env").textContent = normalizeEnvironmentLabel(info.environment);
           }
 

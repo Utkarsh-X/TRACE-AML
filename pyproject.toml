@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trace-aml"
-version = "3.0.0"
-description = "TRACE-AML v3 CLI-first facial recognition demo stack"
+version = "4.0.0"
+description = "TRACE-AML v4 CLI-first facial recognition demo stack"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,6 +24,7 @@ dependencies = [
   "pyarrow>=20.0.0,<22.0.0",
   "fastapi>=0.115.0,<0.120.0",
   "uvicorn>=0.31.0,<0.40.0",
+  "google-auth>=2.35.0,<3.0.0",
   "cryptography>=43.0.0,<45.0.0",
   "keyring>=25.0.0,<27.0.0",
 ]

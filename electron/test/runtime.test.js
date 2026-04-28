@@ -52,7 +52,7 @@ IGNORED LINE
     hostname: "DEMO-BOX",
     platform: "win32",
     appName: "TRACE-AML",
-    version: "3.0.0",
+    version: "4.0.0",
   });
   assert.equal(model.greeting, "Welcome, Utkarsh");
   assert.match(model.subtitle, /Windows/i);

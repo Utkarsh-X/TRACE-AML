@@ -77,6 +77,63 @@ That profile:
 - disables PDF report generation
 - keeps action logging enabled
 
+## Optional Desktop Auth Gate
+
+The desktop auth gate is implemented but remains config-driven.
+
+To turn it on for a secured release build:
+
+1. Create a Google Identity Services client ID
+2. Add this origin in Google Cloud:
+
+```text
+http://127.0.0.1:18080
+```
+
+3. Host a remote allowlist JSON file over HTTPS
+4. Set these values in `.env` before packaging:
+
+```text
+TRACE_AML_AUTH__ENABLED=true
+TRACE_AML_AUTH__GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+TRACE_AML_AUTH__POLICY_URL=https://your-remote-policy-url/auth-policy.json
+TRACE_AML_AUTH__SESSION_TTL_MINUTES=15
+TRACE_AML_AUTH__VALIDATION_INTERVAL_SECONDS=60
+```
+
+5. Rebuild the desktop package
+
+This repo now includes a concrete release policy file at:
+
+```text
+config/auth-policy.release.json
+```
+
+The packaged `.env` is configured to use the raw GitHub URL for that file:
+
+```text
+https://raw.githubusercontent.com/Utkarsh-X/TRACE-AML/main/config/auth-policy.release.json
+```
+
+Policy format example:
+
+```json
+{
+  "version": 1,
+  "allowed_emails": [
+    "owner@example.com",
+    "tester@example.com"
+  ],
+  "message": "Access is restricted to approved Google accounts."
+}
+```
+
+With auth enabled:
+- users must sign in with Google before opening the workspace
+- only allowlisted accounts can continue
+- the app fails closed if the remote policy cannot be fetched
+- removing an email from the policy invalidates access on the next validation cycle
+
 ## Portable Data Behavior
 
 Electron sets `TRACE_DATA_ROOT` before launching the backend, so packaged mode writes runtime data under the user-specific app-data directory instead of inside the install folder.

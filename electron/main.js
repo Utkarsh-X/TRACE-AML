@@ -48,9 +48,9 @@ function backendRoot() {
 
 function desktopIconPath() {
   const packagedResourceIcon = path.join(process.resourcesPath, "app.ico");
-  const packagedIcon = path.join(process.resourcesPath, "app.asar.unpacked", "(1).ico");
-  const packagedInlineIcon = path.join(process.resourcesPath, "app.asar", "(1).ico");
-  const devIcon = path.join(repoRoot(), "(1).ico");
+  const packagedIcon = path.join(process.resourcesPath, "app.asar.unpacked", "w.ico");
+  const packagedInlineIcon = path.join(process.resourcesPath, "app.asar", "w.ico");
+  const devIcon = path.join(repoRoot(), "w.ico");
 
   if (app.isPackaged) {
     if (fs.existsSync(packagedResourceIcon)) {
@@ -71,10 +71,14 @@ function serviceBaseUrl() {
   return buildServiceBaseUrl({ host: SERVICE_HOST, port: SERVICE_PORT });
 }
 
-function frontendUrl() {
-  const baseUrl = buildFrontendUrl({ host: SERVICE_HOST, port: SERVICE_PORT });
+function frontendUrl(page = "/ui/live_ops/index.html") {
+  const baseUrl = buildFrontendUrl({ host: SERVICE_HOST, port: SERVICE_PORT, page });
   const separator = baseUrl.includes("?") ? "&" : "?";
   return `${baseUrl}${separator}desktop_launch=${encodeURIComponent(FRONTEND_LAUNCH_NONCE)}`;
+}
+
+function authUrl() {
+  return frontendUrl("/ui/auth/index.html");
 }
 
 function userDataRoot() {
@@ -261,7 +265,7 @@ async function createMainWindow() {
     mainWindow = null;
   });
   await clearRendererCache(mainWindow.webContents.session);
-  await mainWindow.loadURL(frontendUrl());
+  await mainWindow.loadURL(authUrl());
   return mainWindow;
 }
 
@@ -293,7 +297,7 @@ function startBackendProcess() {
     projectRoot: root,
     bundledBackendPath,
     pythonCommand: resolvePythonCommand(root),
-    configPath: app.isPackaged ? "_internal/config/config.desktop.yaml" : "config/config.demo.yaml",
+    configPath: app.isPackaged ? "_internal/config/config.desktop.yaml" : "config/config.desktop.yaml",
   });
 
   publishSplashState({

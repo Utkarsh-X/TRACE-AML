@@ -23,6 +23,8 @@ hiddenimports = [
     "trace_aml.desktop_backend",
     "trace_aml.cli",
     "dotenv",
+    "google.auth",
+    "google.oauth2",
     "insightface.app",
     "insightface.model_zoo",
     "insightface.utils",
@@ -33,7 +35,7 @@ hiddenimports = [
     "uvicorn.protocols.websockets.auto",
 ]
 
-for package_name in ("trace_aml", "insightface", "dotenv", "skimage", "cryptography"):
+for package_name in ("trace_aml", "insightface", "dotenv", "skimage", "cryptography", "google.auth", "google.oauth2"):
     try:
         hiddenimports += collect_submodules(package_name)
     except Exception:

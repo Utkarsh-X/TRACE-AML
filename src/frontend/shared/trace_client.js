@@ -170,6 +170,14 @@
     return fetch(url, merged)
       .then(function (res) {
         clearTimeout(timeoutId);
+        if (res.status === 401) {
+          try {
+            global.dispatchEvent(new CustomEvent("trace:auth-expired", { detail: { url: url } }));
+          } catch (_) { /* ignore */ }
+          return res.text().then(function () {
+            return null;
+          });
+        }
         if (!res.ok) {
           if (affectConnectionState) {
             _recordConnectionFailure();

@@ -67,7 +67,7 @@ from trace_aml.recognizers.arcface import ArcFaceRecognizer
 from trace_aml.store.analytics import AnalyticsStore
 from trace_aml.store.vector_store import VectorStore
 
-app = typer.Typer(help="TRACE-AML v3 tactical CLI", no_args_is_help=True, rich_markup_mode="rich")
+app = typer.Typer(help="TRACE-AML v4 tactical CLI", no_args_is_help=True, rich_markup_mode="rich")
 person_app = typer.Typer(help="Person registry commands", no_args_is_help=True)
 train_app = typer.Typer(help="Embedding build commands", no_args_is_help=True)
 recognize_app = typer.Typer(help="Live recognition commands", no_args_is_help=True)
@@ -138,7 +138,7 @@ def _recognizer(runtime: Runtime) -> ArcFaceRecognizer:
 
 def _banner() -> Panel:
     return Panel.fit(
-        "[bold cyan]TRACE-AML v3[/bold cyan]\n"
+        "[bold cyan]TRACE-AML v4[/bold cyan]\n"
         "[dim]Tactical CLI | Quality Core Hardening[/dim]",
         border_style="bright_black",
     )

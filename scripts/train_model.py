@@ -1,6 +1,6 @@
 """Legacy compatibility stub.
 
-TRACE-AML v3 uses the new package runtime:
+TRACE-AML v4 uses the new package runtime:
     trace-aml train rebuild
 """
 
