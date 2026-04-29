@@ -11,6 +11,7 @@ const {
   buildFrontendUrl,
   buildServiceBaseUrl,
   buildWelcomeModel,
+  chooseDesktopBootstrapMode,
   ensureSeedData,
   hasRecognitionSeedData,
   parseDotEnvText,
@@ -22,6 +23,19 @@ function run() {
   assert.equal(
     buildFrontendUrl({ host: "127.0.0.1", port: 9090 }),
     "http://127.0.0.1:9090/ui/live_ops/index.html",
+  );
+
+  assert.equal(
+    chooseDesktopBootstrapMode({ serviceHealthy: false, backendProcessActive: false }),
+    "spawn",
+  );
+  assert.equal(
+    chooseDesktopBootstrapMode({ serviceHealthy: true, backendProcessActive: false }),
+    "reuse",
+  );
+  assert.equal(
+    chooseDesktopBootstrapMode({ serviceHealthy: false, backendProcessActive: true }),
+    "reuse",
   );
 
   const env = buildBackendEnv({

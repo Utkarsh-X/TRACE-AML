@@ -8,6 +8,7 @@ const { app, BrowserWindow, ipcMain, session, shell } = require("electron");
 const {
   buildBackendEnv,
   buildBackendLaunchSpec,
+  chooseDesktopBootstrapMode,
   buildFrontendUrl,
   buildServiceBaseUrl,
   buildWelcomeModel,
@@ -22,6 +23,7 @@ const HEALTH_RETRY_MS = 1000;
 const LOG_TAIL_LIMIT = 8;
 const FRONTEND_LAUNCH_NONCE = `${Date.now()}`;
 const APP_USER_MODEL_ID = "com.traceaml.desktop";
+const SINGLE_INSTANCE_LOCK = app.requestSingleInstanceLock();
 
 let splashWindow = null;
 let welcomeWindow = null;
@@ -79,6 +81,18 @@ function frontendUrl(page = "/ui/live_ops/index.html") {
 
 function authUrl() {
   return frontendUrl("/ui/auth/index.html");
+}
+
+function focusVisibleWindow(win) {
+  if (!win || win.isDestroyed()) {
+    return false;
+  }
+  if (typeof win.isMinimized === "function" && win.isMinimized()) {
+    win.restore();
+  }
+  win.show();
+  win.focus();
+  return true;
 }
 
 function userDataRoot() {
@@ -345,6 +359,17 @@ function resolveBundledBackendExecutable(root) {
   return fs.existsSync(candidate) ? candidate : "";
 }
 
+async function probeServiceReadyOnce() {
+  try {
+    const response = await fetch(`${serviceBaseUrl()}/health`, {
+      headers: { Accept: "application/json" },
+    });
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
+}
+
 async function waitForServiceReady() {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
 
@@ -408,15 +433,25 @@ function shutdownBackend() {
 }
 
 async function bootstrapDesktop() {
-  createSplashWindow();
-  publishSplashState({
-    stage: "Preparing desktop shell",
-    detail: "Loading Electron shell and desktop assets.",
-    progress: 10,
+  const startupMode = chooseDesktopBootstrapMode({
+    serviceHealthy: await probeServiceReadyOnce(),
+    backendProcessActive: Boolean(backendProcess),
   });
-  startBackendProcess();
-  await waitForServiceReady();
-  await sleep(500);
+
+  if (startupMode === "spawn") {
+    createSplashWindow();
+    publishSplashState({
+      stage: "Preparing desktop shell",
+      detail: "Loading Electron shell and desktop assets.",
+      progress: 10,
+    });
+    startBackendProcess();
+    await waitForServiceReady();
+    await sleep(500);
+  } else {
+    rememberLog(`[Electron] Reusing existing local service at ${serviceBaseUrl()}`);
+  }
+
   await createMainWindow();
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();
@@ -455,18 +490,29 @@ ipcMain.handle("trace:open-external", async (_event, targetUrl) => {
   return { ok: true };
 });
 
-app.whenReady().then(async () => {
-  app.setAppUserModelId(APP_USER_MODEL_ID);
-  await bootstrapDesktop();
-}).catch((error) => {
-  publishSplashState({
-    stage: "Startup failed",
-    detail: error instanceof Error ? error.message : String(error),
-    failed: true,
-    ready: false,
-    progress: 100,
+if (!SINGLE_INSTANCE_LOCK) {
+  app.quit();
+} else {
+  app.on("second-instance", async () => {
+    if (focusVisibleWindow(mainWindow) || focusVisibleWindow(splashWindow) || focusVisibleWindow(welcomeWindow)) {
+      return;
+    }
+    await bootstrapDesktop();
   });
-});
+
+  app.whenReady().then(async () => {
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+    await bootstrapDesktop();
+  }).catch((error) => {
+    publishSplashState({
+      stage: "Startup failed",
+      detail: error instanceof Error ? error.message : String(error),
+      failed: true,
+      ready: false,
+      progress: 100,
+    });
+  });
+}
 
 app.on("before-quit", () => {
   isQuitting = true;

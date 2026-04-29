@@ -92,6 +92,8 @@ async function run() {
 
   const openedUrls = [];
   const fetchCalls = [];
+  let intervalId = 0;
+  const intervals = new Map();
   const responses = [
     {
       ok: true,
@@ -115,6 +117,16 @@ async function run() {
         status: "ready",
         flow_id: "flow-123",
         auth_url: "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
+        next: "/ui/live_ops/index.html",
+      },
+    },
+    {
+      ok: true,
+      status: 200,
+      body: {
+        status: "pending",
+        authenticated: false,
+        detail: "",
         next: "/ui/live_ops/index.html",
       },
     },
@@ -153,10 +165,14 @@ async function run() {
       return 1;
     },
     clearTimeout() {},
-    setInterval() {
-      return 1;
+    setInterval(fn) {
+      intervalId += 1;
+      intervals.set(intervalId, fn);
+      return intervalId;
     },
-    clearInterval() {},
+    clearInterval(id) {
+      intervals.delete(id);
+    },
     addEventListener() {},
     dispatchEvent() {},
     traceDesktop: {
@@ -195,16 +211,34 @@ async function run() {
   await flushMicrotasks();
 
   assert.equal(buttonHost.children.length, 1, "auth page should render a custom sign-in button");
-  const button = buttonHost.children[0];
-  assert.match(button.textContent, /google/i);
+  let button = buttonHost.children[0];
+  assert.match(button.textContent, /continue with google/i);
 
   button.click();
   await flushMicrotasks();
 
   assert.deepEqual(openedUrls, ["https://accounts.google.com/o/oauth2/v2/auth?state=abc"]);
-  assert.equal(authStatus.textContent.length > 0, true);
+  assert.match(authStatus.textContent, /awaiting browser approval/i);
   assert.equal(shell.dataset.authTone === "neutral" || shell.dataset.authTone === "ok", true);
   assert.equal(fetchCalls[2].url, "/api/v1/auth/browser/start");
+  button = buttonHost.children[0];
+  assert.match(button.textContent, /cancel sign-in/i);
+
+  const poller = intervals.values().next().value;
+  assert.equal(typeof poller, "function", "auth page should start polling while awaiting browser approval");
+  poller();
+  await flushMicrotasks();
+  assert.equal(fetchCalls[3].url, "/api/v1/auth/browser/status?flow_id=flow-123");
+
+  button.click();
+  await flushMicrotasks();
+
+  assert.match(authStatus.textContent, /operator sign-in required/i);
+  assert.match(authDetail.textContent, /approved accounts only/i);
+  button = buttonHost.children[0];
+  assert.match(button.textContent, /continue with google/i);
+  assert.equal(intervals.size, 0, "cancel should stop the browser auth polling loop");
+  assert.equal(location.replacedWith, "");
 
   console.log("auth flow tests passed");
 }

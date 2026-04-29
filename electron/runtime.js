@@ -21,6 +21,13 @@ function buildFrontendUrl({
   return `${buildServiceBaseUrl({ host, port })}${normalizedPage}`;
 }
 
+function chooseDesktopBootstrapMode({
+  serviceHealthy = false,
+  backendProcessActive = false,
+} = {}) {
+  return serviceHealthy || backendProcessActive ? "reuse" : "spawn";
+}
+
 function buildBackendEnv({ baseEnv = process.env, dataRoot = "", appMode = "electron" } = {}) {
   const env = { ...baseEnv };
   if (dataRoot) {
@@ -194,6 +201,7 @@ module.exports = {
   buildFrontendUrl,
   buildServiceBaseUrl,
   buildWelcomeModel,
+  chooseDesktopBootstrapMode,
   ensureSeedData,
   hasRecognitionSeedData,
   parseDotEnvText,

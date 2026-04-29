@@ -120,6 +120,23 @@
   }
 
   function _renderAuthButton(buttonHost, onClick) {
+    _renderActionButton(buttonHost, {
+      label: "Continue with Google",
+      iconMarkup: [
+        '<span class="auth-button__icon" aria-hidden="true">',
+        '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">',
+        '<path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5A9.5 9.5 0 0 0 2.5 12 9.5 9.5 0 0 0 12 21.5c5.5 0 9.1-3.8 9.1-9.2 0-.6-.1-1.1-.2-1.6z"/>',
+        '<path fill="#34A853" d="M3.6 7.6l3.2 2.3A6 6 0 0 1 12 6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5c-3.6 0-6.7 2-8.4 5.1z"/>',
+        '<path fill="#FBBC05" d="M2.5 12c0 1.5.4 3 1.1 4.3l3.6-2.8a5.8 5.8 0 0 1-.3-1.5c0-.5.1-1 .3-1.5L3.6 7.6A9.5 9.5 0 0 0 2.5 12z"/>',
+        '<path fill="#4285F4" d="M12 21.5c2.5 0 4.6-.8 6.2-2.3l-3-2.4c-.8.6-1.9 1.1-3.2 1.1-2.5 0-4.7-1.7-5.4-4L3 16.3a9.5 9.5 0 0 0 9 5.2z"/>',
+        "</svg>",
+        "</span>",
+      ].join(""),
+      onClick: onClick,
+    });
+  }
+
+  function _renderActionButton(buttonHost, options) {
     if (!buttonHost) {
       return;
     }
@@ -129,18 +146,8 @@
     var button = document.createElement("button");
     button.type = "button";
     button.className = "auth-button";
-    button.innerHTML = [
-      '<span class="auth-button__icon" aria-hidden="true">',
-      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">',
-      '<path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5A9.5 9.5 0 0 0 2.5 12 9.5 9.5 0 0 0 12 21.5c5.5 0 9.1-3.8 9.1-9.2 0-.6-.1-1.1-.2-1.6z"/>',
-      '<path fill="#34A853" d="M3.6 7.6l3.2 2.3A6 6 0 0 1 12 6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5c-3.6 0-6.7 2-8.4 5.1z"/>',
-      '<path fill="#FBBC05" d="M2.5 12c0 1.5.4 3 1.1 4.3l3.6-2.8a5.8 5.8 0 0 1-.3-1.5c0-.5.1-1 .3-1.5L3.6 7.6A9.5 9.5 0 0 0 2.5 12z"/>',
-      '<path fill="#4285F4" d="M12 21.5c2.5 0 4.6-.8 6.2-2.3l-3-2.4c-.8.6-1.9 1.1-3.2 1.1-2.5 0-4.7-1.7-5.4-4L3 16.3a9.5 9.5 0 0 0 9 5.2z"/>',
-      "</svg>",
-      "</span>",
-      '<span class="auth-button__label">Continue with Google</span>',
-    ].join("");
-    button.addEventListener("click", onClick);
+    button.innerHTML = (options.iconMarkup || "") + '<span class="auth-button__label">' + String(options.label || "") + "</span>";
+    button.addEventListener("click", options.onClick);
     buttonHost.appendChild(button);
   }
 
@@ -220,6 +227,9 @@
     var buttonHost = document.getElementById("google-button");
     var shellNode = document.getElementById("auth-shell");
     var activeButton = null;
+    var activeFlowId = "";
+    var idleTitle = "Operator sign-in required";
+    var idleDetail = "Use an approved Google account to continue.";
 
     function setStatus(title, detail, tone) {
       if (statusNode) statusNode.textContent = title || "";
@@ -233,6 +243,27 @@
       if (activeButton) {
         activeButton.disabled = !!disabled;
       }
+    }
+
+    function syncActiveButton() {
+      activeButton = buttonHost && buttonHost.children ? buttonHost.children[0] : null;
+    }
+
+    function resetToIdle(config) {
+      activeFlowId = "";
+      _stopBrowserAuthPoll();
+      setStatus(idleTitle, idleDetail, "neutral");
+      renderSignInButton(config);
+    }
+
+    function renderCancelButton(config) {
+      _renderActionButton(buttonHost, {
+        label: "Cancel sign-in",
+        onClick: function () {
+          resetToIdle(config);
+        },
+      });
+      syncActiveButton();
     }
 
     function renderSignInButton(config) {
@@ -271,13 +302,19 @@
           }
 
           _launchExternalAuth(authUrl).then(function () {
+            activeFlowId = flowId;
             setStatus(
               "Awaiting browser approval",
               "Complete Google sign-in in your default browser. This desktop window will unlock automatically after approval.",
               "neutral"
             );
+            renderCancelButton(config);
             _pollBrowserAuth(flowId, config.browser_status_path || AUTH_BROWSER_STATUS_PATH, function (update) {
+              if (!activeFlowId || activeFlowId !== flowId) {
+                return;
+              }
               if (update.kind === "authenticated") {
+                activeFlowId = "";
                 setStatus(
                   "Access granted",
                   "Desktop session validated. Loading workspace...",
@@ -289,8 +326,9 @@
                 return;
               }
 
-              setButtonDisabled(false);
+              activeFlowId = "";
               setStatus("Access denied", update.detail, "error");
+              renderSignInButton(config);
             });
           }).catch(function () {
             setButtonDisabled(false);
@@ -309,7 +347,7 @@
           );
         });
       });
-      activeButton = buttonHost && buttonHost.children ? buttonHost.children[0] : null;
+      syncActiveButton();
     }
 
     function redirectToWorkspace() {
@@ -334,7 +372,9 @@
           return;
         }
 
-        setStatus("Operator sign-in required", config.message || "Use an approved Google account to continue.", "neutral");
+        idleTitle = "Operator sign-in required";
+        idleDetail = config.message || "Use an approved Google account to continue.";
+        setStatus(idleTitle, idleDetail, "neutral");
         renderSignInButton(config);
       });
     }).catch(function () {
