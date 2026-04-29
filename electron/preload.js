@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("traceDesktop", {
   launchWorkspace() {
     return ipcRenderer.invoke("trace:launch-workspace");
   },
+  openExternal(url) {
+    return ipcRenderer.invoke("trace:open-external", url);
+  },
   quitApp() {
     return ipcRenderer.invoke("trace:quit-app");
   },

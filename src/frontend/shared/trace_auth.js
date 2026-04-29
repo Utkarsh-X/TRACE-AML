@@ -3,11 +3,12 @@
 
   var AUTH_CONFIG_PATH = "/api/v1/auth/config";
   var AUTH_SESSION_PATH = "/api/v1/auth/session";
-  var AUTH_GOOGLE_PATH = "/api/v1/auth/google";
   var AUTH_LOGOUT_PATH = "/api/v1/auth/logout";
+  var AUTH_BROWSER_START_PATH = "/api/v1/auth/browser/start";
+  var AUTH_BROWSER_STATUS_PATH = "/api/v1/auth/browser/status";
   var DEFAULT_WORKSPACE_PATH = "/ui/live_ops/index.html";
-  var GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
   var _heartbeatTimer = null;
+  var _browserAuthPollTimer = null;
   var _protectStarted = false;
 
   function _fetchJson(path, init) {
@@ -70,39 +71,14 @@
     return _fetchJson(AUTH_LOGOUT_PATH, { method: "POST" });
   }
 
-  function submitGoogleCredential(credential) {
-    return _fetchJson(AUTH_GOOGLE_PATH, {
+  function _postJson(path, payload) {
+    return _fetchJson(path, {
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ credential: credential }),
-    });
-  }
-
-  function ensureGoogleScript() {
-    return new Promise(function (resolve, reject) {
-      if (global.google && global.google.accounts && global.google.accounts.id) {
-        resolve(global.google);
-        return;
-      }
-
-      var existing = document.querySelector('script[data-trace-google-gis="true"]');
-      if (existing) {
-        existing.addEventListener("load", function () { resolve(global.google); }, { once: true });
-        existing.addEventListener("error", reject, { once: true });
-        return;
-      }
-
-      var script = document.createElement("script");
-      script.src = GOOGLE_SCRIPT_SRC;
-      script.async = true;
-      script.defer = true;
-      script.dataset.traceGoogleGis = "true";
-      script.addEventListener("load", function () { resolve(global.google); }, { once: true });
-      script.addEventListener("error", reject, { once: true });
-      document.head.appendChild(script);
+      body: JSON.stringify(payload || {}),
     });
   }
 
@@ -120,6 +96,90 @@
         redirectToAuth();
       });
     }, Math.max(15, Number(intervalSeconds) || 60) * 1000);
+  }
+
+  function _stopBrowserAuthPoll() {
+    if (_browserAuthPollTimer) {
+      clearInterval(_browserAuthPollTimer);
+      _browserAuthPollTimer = null;
+    }
+  }
+
+  function _launchExternalAuth(url) {
+    if (global.traceDesktop && typeof global.traceDesktop.openExternal === "function") {
+      return Promise.resolve(global.traceDesktop.openExternal(url));
+    }
+
+    if (typeof global.open === "function") {
+      global.open(url, "_blank", "noopener");
+      return Promise.resolve({ ok: true });
+    }
+
+    global.location.href = url;
+    return Promise.resolve({ ok: true });
+  }
+
+  function _renderAuthButton(buttonHost, onClick) {
+    if (!buttonHost) {
+      return;
+    }
+
+    buttonHost.innerHTML = "";
+
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "auth-button";
+    button.innerHTML = [
+      '<span class="auth-button__icon" aria-hidden="true">',
+      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">',
+      '<path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5A9.5 9.5 0 0 0 2.5 12 9.5 9.5 0 0 0 12 21.5c5.5 0 9.1-3.8 9.1-9.2 0-.6-.1-1.1-.2-1.6z"/>',
+      '<path fill="#34A853" d="M3.6 7.6l3.2 2.3A6 6 0 0 1 12 6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.5 14.6 2.5 12 2.5c-3.6 0-6.7 2-8.4 5.1z"/>',
+      '<path fill="#FBBC05" d="M2.5 12c0 1.5.4 3 1.1 4.3l3.6-2.8a5.8 5.8 0 0 1-.3-1.5c0-.5.1-1 .3-1.5L3.6 7.6A9.5 9.5 0 0 0 2.5 12z"/>',
+      '<path fill="#4285F4" d="M12 21.5c2.5 0 4.6-.8 6.2-2.3l-3-2.4c-.8.6-1.9 1.1-3.2 1.1-2.5 0-4.7-1.7-5.4-4L3 16.3a9.5 9.5 0 0 0 9 5.2z"/>',
+      "</svg>",
+      "</span>",
+      '<span class="auth-button__label">Continue with Google</span>',
+    ].join("");
+    button.addEventListener("click", onClick);
+    buttonHost.appendChild(button);
+  }
+
+  function _pollBrowserAuth(flowId, statusPath, onUpdate) {
+    _stopBrowserAuthPoll();
+    _browserAuthPollTimer = global.setInterval(function () {
+      _fetchJson((statusPath || AUTH_BROWSER_STATUS_PATH) + "?flow_id=" + encodeURIComponent(flowId)).then(function (result) {
+        if (!result.ok) {
+          if (result.status === 404 || result.status === 409) {
+            _stopBrowserAuthPoll();
+            onUpdate({
+              kind: "failed",
+              detail: (result.body && result.body.detail) || "Authorization request expired. Start sign-in again.",
+            });
+          }
+          return;
+        }
+
+        var payload = result.body || {};
+        if (payload.status === "authenticated") {
+          _stopBrowserAuthPoll();
+          onUpdate({
+            kind: "authenticated",
+            payload: payload,
+          });
+          return;
+        }
+
+        if (payload.status === "failed") {
+          _stopBrowserAuthPoll();
+          onUpdate({
+            kind: "failed",
+            detail: payload.detail || "Access was denied for this desktop build.",
+          });
+        }
+      }).catch(function () {
+        // Keep polling during transient network/backend jitter.
+      });
+    }, 1500);
   }
 
   function protectPage() {
@@ -159,6 +219,7 @@
     var detailNode = document.getElementById("auth-detail");
     var buttonHost = document.getElementById("google-button");
     var shellNode = document.getElementById("auth-shell");
+    var activeButton = null;
 
     function setStatus(title, detail, tone) {
       if (statusNode) statusNode.textContent = title || "";
@@ -166,6 +227,89 @@
       if (shellNode) {
         shellNode.dataset.authTone = tone || "neutral";
       }
+    }
+
+    function setButtonDisabled(disabled) {
+      if (activeButton) {
+        activeButton.disabled = !!disabled;
+      }
+    }
+
+    function renderSignInButton(config) {
+      _renderAuthButton(buttonHost, function () {
+        setButtonDisabled(true);
+        setStatus(
+          "Opening Google sign-in",
+          "Launching your default browser so you can sign in with an approved account.",
+          "neutral"
+        );
+
+        _postJson(config.browser_start_path || AUTH_BROWSER_START_PATH, {
+          next: nextPath,
+        }).then(function (result) {
+          if (!result.ok) {
+            setButtonDisabled(false);
+            setStatus(
+              "Authorization unavailable",
+              (result.body && result.body.detail) || "TRACE-AML could not start the browser sign-in flow.",
+              "error"
+            );
+            return;
+          }
+
+          var payload = result.body || {};
+          var authUrl = payload.auth_url || "";
+          var flowId = payload.flow_id || "";
+          if (!authUrl || !flowId) {
+            setButtonDisabled(false);
+            setStatus(
+              "Authorization unavailable",
+              "TRACE-AML did not receive a valid browser sign-in handoff.",
+              "error"
+            );
+            return;
+          }
+
+          _launchExternalAuth(authUrl).then(function () {
+            setStatus(
+              "Awaiting browser approval",
+              "Complete Google sign-in in your default browser. This desktop window will unlock automatically after approval.",
+              "neutral"
+            );
+            _pollBrowserAuth(flowId, config.browser_status_path || AUTH_BROWSER_STATUS_PATH, function (update) {
+              if (update.kind === "authenticated") {
+                setStatus(
+                  "Access granted",
+                  "Desktop session validated. Loading workspace...",
+                  "ok"
+                );
+                global.setTimeout(function () {
+                  _redirect((update.payload && update.payload.next) || nextPath);
+                }, 250);
+                return;
+              }
+
+              setButtonDisabled(false);
+              setStatus("Access denied", update.detail, "error");
+            });
+          }).catch(function () {
+            setButtonDisabled(false);
+            setStatus(
+              "Browser launch failed",
+              "TRACE-AML could not open your default browser for Google sign-in.",
+              "error"
+            );
+          });
+        }).catch(function () {
+          setButtonDisabled(false);
+          setStatus(
+            "Authorization unavailable",
+            "TRACE-AML could not contact the local authorization service.",
+            "error"
+          );
+        });
+      });
+      activeButton = buttonHost && buttonHost.children ? buttonHost.children[0] : null;
     }
 
     function redirectToWorkspace() {
@@ -191,45 +335,7 @@
         }
 
         setStatus("Operator sign-in required", config.message || "Use an approved Google account to continue.", "neutral");
-        return ensureGoogleScript().then(function () {
-          if (!(global.google && global.google.accounts && global.google.accounts.id)) {
-            throw new Error("Google Identity Services did not load.");
-          }
-
-          global.google.accounts.id.initialize({
-            client_id: config.client_id,
-            callback: function (response) {
-              setStatus("Validating access", "Checking Google identity and remote approval policy...", "neutral");
-              submitGoogleCredential(response.credential).then(function (result) {
-                if (!result.ok) {
-                  setStatus("Access denied", (result.body && result.body.detail) || "This account is not approved for this build.", "error");
-                  return;
-                }
-                setStatus("Access granted", "Desktop session validated. Loading workspace...", "ok");
-                global.setTimeout(redirectToWorkspace, 200);
-              }).catch(function () {
-                setStatus("Validation failed", "Desktop authorization could not be completed.", "error");
-              });
-            },
-          });
-
-          if (buttonHost) {
-            buttonHost.innerHTML = "";
-            global.google.accounts.id.renderButton(buttonHost, {
-              theme: "outline",
-              size: "large",
-              shape: "pill",
-              text: "signin_with",
-              width: 320,
-            });
-          }
-        }).catch(function () {
-          setStatus(
-            "Google sign-in unavailable",
-            "The sign-in provider could not be loaded. This build requires a working network connection.",
-            "error"
-          );
-        });
+        renderSignInButton(config);
       });
     }).catch(function () {
       setStatus("Authorization bootstrap failed", "Desktop authorization could not be initialized.", "error");

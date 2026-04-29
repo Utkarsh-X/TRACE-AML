@@ -3,7 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const { app, BrowserWindow, ipcMain, session } = require("electron");
+const { app, BrowserWindow, ipcMain, session, shell } = require("electron");
 
 const {
   buildBackendEnv,
@@ -444,6 +444,14 @@ ipcMain.handle("trace:launch-workspace", async () => {
 });
 ipcMain.handle("trace:quit-app", () => {
   app.quit();
+  return { ok: true };
+});
+ipcMain.handle("trace:open-external", async (_event, targetUrl) => {
+  const url = String(targetUrl || "").trim();
+  if (!url) {
+    return { ok: false, error: "missing_url" };
+  }
+  await shell.openExternal(url);
   return { ok: true };
 });
 

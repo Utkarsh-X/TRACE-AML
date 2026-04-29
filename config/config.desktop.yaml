@@ -17,7 +17,7 @@ actions:
 auth:
   enabled: false
   google_client_id: ""
-  policy_url: ""
+  policy_url: "https://raw.githubusercontent.com/Utkarsh-X/TRACE-AML/main/config/auth-policy.release.json"
   session_ttl_minutes: 15
   validation_interval_seconds: 60
   request_timeout_seconds: 8

@@ -55,3 +55,14 @@ class AuthSessionRecord(BaseModel):
             "avatar_url": self.identity.avatar_url,
         }
 
+
+class BrowserAuthFlowRecord(BaseModel):
+    flow_id: str
+    state: str
+    next_path: str
+    created_at: datetime
+    expires_at: datetime
+    status: str = "pending"
+    detail: str = ""
+    session_id: str = ""
+    user: dict[str, str] | None = None

@@ -270,6 +270,8 @@ class VaultSettings(BaseModel):
 class AuthSettings(BaseModel):
     enabled: bool = False
     google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://127.0.0.1:18080"
     policy_url: str = ""
     session_ttl_minutes: int = 15
     validation_interval_seconds: int = 60

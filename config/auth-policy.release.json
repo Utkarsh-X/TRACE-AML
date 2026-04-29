@@ -1,7 +1,11 @@
 {
-  "version": 1,
+  "version": 4,
   "allowed_emails": [
-    "utkarshchandra170@gmail.com"
+    "utkarshchandra170@gmail.com",
+    "blackmagician7007@gmail.com",
+    "haider.hussain1234@gmail.com",
+    "hardiksengar64@gmail.com"
+
   ],
   "message": "This TRACE-AML desktop build is restricted to approved Google accounts."
 }

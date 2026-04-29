@@ -27,6 +27,105 @@ class IncidentSeverityPayload(BaseModel):
     severity: AlertSeverity
 
 
+def _auth_callback_page(*, title: str, detail: str, success: bool) -> str:
+    heading = "Authorization complete" if success else "Authorization failed"
+    chip = "Approved" if success else "Denied"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #0e0e0e;
+      --surface: #151515;
+      --outline: rgba(255,255,255,0.1);
+      --text: #f5f5f5;
+      --muted: rgba(255,255,255,0.62);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,0.045), transparent 28%),
+        linear-gradient(180deg, #101010 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+    }}
+    .panel {{
+      width: min(100%, 680px);
+      border: 1px solid var(--outline);
+      background: rgba(255,255,255,0.03);
+      padding: 28px 30px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.42);
+    }}
+    .mono {{
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.5);
+    }}
+    h1 {{
+      margin: 18px 0 0;
+      font-size: clamp(2.4rem, 6vw, 4.6rem);
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+    }}
+    h2 {{
+      margin: 22px 0 0;
+      font-size: 1.4rem;
+      letter-spacing: -0.04em;
+    }}
+    p {{
+      margin: 14px 0 0;
+      color: var(--muted);
+      line-height: 1.72;
+      font-size: 0.98rem;
+    }}
+    .chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 18px;
+      padding: 0.5rem 0.85rem;
+      border: 1px solid var(--outline);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }}
+    .chip::before {{
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #ffffff;
+      opacity: 0.88;
+    }}
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="mono">Trace-AML Desktop Authorization</div>
+    <h1>TRACE-AML</h1>
+    <span class="chip">{chip}</span>
+    <h2>{heading}</h2>
+    <p>{detail}</p>
+    <p>Return to the desktop window to continue.</p>
+  </main>
+</body>
+</html>"""
+
+
 def _event_to_sse(event: StreamEvent) -> str:
     payload = {
         "topic": event.topic,
@@ -69,18 +168,31 @@ def _resolve_frontend_dir() -> Path | None:
 
 
 def _build_auth_runtime(settings: Settings) -> dict[str, Any]:
+    from trace_aml.auth.browser_oauth import GoogleBrowserOAuthClient
     from trace_aml.auth.google_identity import GoogleIdentityVerifier
     from trace_aml.auth.policy import RemoteAuthPolicyClient
-    from trace_aml.auth.session import DesktopSessionManager
+    from trace_aml.auth.session import BrowserAuthFlowManager, DesktopSessionManager
 
     policy_client = RemoteAuthPolicyClient(
         policy_url=settings.auth.policy_url,
         timeout_seconds=settings.auth.request_timeout_seconds,
     )
+    session_manager = DesktopSessionManager(settings.auth, policy_client=policy_client)
+    flow_now_fn = getattr(session_manager, "_now", None)
     return {
         "identity_verifier": GoogleIdentityVerifier(settings.auth.google_client_id),
+        "browser_oauth_client": GoogleBrowserOAuthClient(
+            client_id=settings.auth.google_client_id,
+            client_secret=settings.auth.google_client_secret,
+            redirect_uri=settings.auth.google_redirect_uri,
+            timeout_seconds=settings.auth.request_timeout_seconds,
+        ),
         "policy_client": policy_client,
-        "session_manager": DesktopSessionManager(settings.auth, policy_client=policy_client),
+        "session_manager": session_manager,
+        "browser_flow_manager": BrowserAuthFlowManager(
+            session_manager=session_manager,
+            now_fn=flow_now_fn,
+        ),
     }
 
 
@@ -95,7 +207,7 @@ def create_service_app(
     try:
         from fastapi import FastAPI, HTTPException, Query, Request
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+        from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:  # pragma: no cover - environment-dependent.
         raise RuntimeError(
@@ -106,12 +218,37 @@ def create_service_app(
     read_models = IntelligenceReadModelService(store, publisher)
     auth_runtime = auth_runtime or _build_auth_runtime(settings)
     auth_enabled = settings.auth.enabled
-    auth_ready = bool(settings.auth.google_client_id.strip() and settings.auth.policy_url.strip())
+    auth_ready = bool(
+        settings.auth.google_client_id.strip()
+        and settings.auth.google_client_secret.strip()
+        and settings.auth.google_redirect_uri.strip()
+        and settings.auth.policy_url.strip()
+    )
     auth_cookie_name = settings.auth.cookie_name
 
     def _get_auth_runtime_item(name: str) -> Any:
         if isinstance(auth_runtime, dict):
+            if name == "browser_flow_manager" and name not in auth_runtime:
+                from trace_aml.auth.session import BrowserAuthFlowManager
+
+                session_manager = auth_runtime["session_manager"]
+                auth_runtime[name] = BrowserAuthFlowManager(
+                    session_manager=session_manager,
+                    now_fn=getattr(session_manager, "_now", None),
+                )
             return auth_runtime[name]
+        if name == "browser_flow_manager" and not hasattr(auth_runtime, name):
+            from trace_aml.auth.session import BrowserAuthFlowManager
+
+            session_manager = getattr(auth_runtime, "session_manager")
+            setattr(
+                auth_runtime,
+                name,
+                BrowserAuthFlowManager(
+                    session_manager=session_manager,
+                    now_fn=getattr(session_manager, "_now", None),
+                ),
+            )
         return getattr(auth_runtime, name)
 
     def _public_api_path(path: str) -> bool:
@@ -123,7 +260,10 @@ def create_service_app(
             "/docs/oauth2-redirect",
             "/redoc",
             "/api/v1/auth/config",
+            "/api/v1/auth/browser/start",
+            "/api/v1/auth/browser/status",
             "/api/v1/auth/google",
+            "/api/v1/auth/google/callback",
             "/api/v1/auth/session",
             "/api/v1/auth/logout",
         }
@@ -360,7 +500,21 @@ def create_service_app(
 
 
     @app.get("/")
-    def root() -> dict[str, Any]:
+    def root(
+        request: Request,
+        code: str | None = Query(default=None),
+        state: str | None = Query(default=None),
+        error: str | None = Query(default=None),
+        error_description: str | None = Query(default=None),
+    ) -> Any:
+        if auth_enabled and (code or state or error):
+            return _auth_browser_callback(
+                request=request,
+                code=code,
+                state=state,
+                error=error,
+                error_description=error_description,
+            )
         return {
             "name": settings.app.name,
             "environment": settings.app.environment,
@@ -376,23 +530,94 @@ def create_service_app(
     class GoogleCredentialPayload(BaseModel):
         credential: str
 
+    class BrowserAuthStartPayload(BaseModel):
+        next: str = "/ui/live_ops/index.html"
+
     @app.get("/api/v1/auth/config")
     def auth_config() -> dict[str, Any]:
         return {
             "enabled": auth_enabled,
             "ready": auth_ready,
             "provider": "google",
+            "flow": "external_browser",
             "client_id": settings.auth.google_client_id if auth_enabled else "",
             "session_ttl_minutes": settings.auth.session_ttl_minutes,
             "validation_interval_seconds": settings.auth.validation_interval_seconds,
             "offline_required": auth_enabled,
+            "browser_start_path": "/api/v1/auth/browser/start",
+            "browser_status_path": "/api/v1/auth/browser/status",
             "message": (
                 "Sign in with an approved Google account to unlock this desktop build."
                 if auth_enabled and auth_ready
                 else "Desktop authorization is disabled for this build."
                 if not auth_enabled
-                else "Desktop authorization is enabled, but Google client ID or policy URL is missing."
+                else "Desktop authorization is enabled, but Google OAuth client configuration is incomplete."
             ),
+        }
+
+    @app.post("/api/v1/auth/browser/start")
+    def auth_browser_start(payload: BrowserAuthStartPayload) -> dict[str, Any]:
+        from trace_aml.auth.browser_oauth import BrowserOAuthError
+
+        _assert_auth_ready()
+
+        next_path = payload.next if str(payload.next or "").startswith("/ui/") else "/ui/live_ops/index.html"
+        flow_manager = _get_auth_runtime_item("browser_flow_manager")
+        oauth_client = _get_auth_runtime_item("browser_oauth_client")
+        flow = flow_manager.create_flow(next_path)
+
+        try:
+            auth_url = oauth_client.build_authorize_url(flow.state)
+        except BrowserOAuthError as exc:
+            flow_manager.mark_failed(flow.state, str(exc))
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        return {
+            "status": "ready",
+            "flow_id": flow.flow_id,
+            "auth_url": auth_url,
+            "next": flow.next_path,
+        }
+
+    @app.get("/api/v1/auth/browser/status")
+    def auth_browser_status(flow_id: str, request: Request) -> Any:
+        from trace_aml.auth.session import AuthSessionError
+
+        _assert_auth_ready()
+
+        flow_manager = _get_auth_runtime_item("browser_flow_manager")
+        try:
+            record = flow_manager.get_status(flow_id)
+        except AuthSessionError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+        if record.status == "authenticated":
+            session_record = flow_manager.consume_session(flow_id)
+            response = JSONResponse(
+                {
+                    "status": "authenticated",
+                    "authenticated": True,
+                    "user": session_record.display,
+                    "expires_at": session_record.expires_at.isoformat(),
+                    "next": record.next_path,
+                }
+            )
+            response.set_cookie(
+                key=auth_cookie_name,
+                value=session_record.session_id,
+                httponly=True,
+                samesite="lax",
+                secure=False,
+                max_age=settings.auth.session_ttl_minutes * 60,
+                path="/",
+            )
+            return response
+
+        return {
+            "status": record.status,
+            "authenticated": False,
+            "detail": record.detail,
+            "next": record.next_path,
         }
 
     @app.post("/api/v1/auth/google")
@@ -431,6 +656,83 @@ def create_service_app(
             path="/",
         )
         return response
+
+    def _auth_browser_callback(
+        *,
+        request: Request,
+        code: str | None,
+        state: str | None,
+        error: str | None,
+        error_description: str | None,
+    ) -> Any:
+        from trace_aml.auth.browser_oauth import BrowserOAuthError
+        from trace_aml.auth.google_identity import GoogleIdentityVerificationError
+        from trace_aml.auth.session import AuthSessionError
+
+        _assert_auth_ready()
+
+        flow_manager = _get_auth_runtime_item("browser_flow_manager")
+        oauth_client = _get_auth_runtime_item("browser_oauth_client")
+        verifier = _get_auth_runtime_item("identity_verifier")
+        session_manager = _get_auth_runtime_item("session_manager")
+
+        if not state:
+            raise HTTPException(status_code=400, detail="Google callback did not include a state value.")
+
+        if error:
+            detail = error_description or error.replace("_", " ").strip() or "Google sign-in was cancelled."
+            flow_manager.mark_failed(state, detail)
+            return HTMLResponse(
+                _auth_callback_page(
+                    title="TRACE-AML authorization failed",
+                    detail=detail,
+                    success=False,
+                )
+            )
+
+        if not code:
+            detail = "Google callback did not include an authorization code."
+            flow_manager.mark_failed(state, detail)
+            return HTMLResponse(_auth_callback_page(title="TRACE-AML authorization failed", detail=detail, success=False))
+
+        try:
+            id_token = oauth_client.exchange_code(code)
+            identity = verifier.verify(id_token)
+            session_record = session_manager.issue_session(identity)
+            flow_manager.mark_completed(state, session_record)
+        except (BrowserOAuthError, GoogleIdentityVerificationError, AuthSessionError) as exc:
+            flow_manager.mark_failed(state, str(exc))
+            return HTMLResponse(
+                _auth_callback_page(
+                    title="TRACE-AML authorization failed",
+                    detail=str(exc),
+                    success=False,
+                )
+            )
+
+        return HTMLResponse(
+            _auth_callback_page(
+                title="TRACE-AML authorization complete",
+                detail="Access was approved. Return to the TRACE-AML desktop window to continue.",
+                success=True,
+            )
+        )
+
+    @app.get("/api/v1/auth/google/callback")
+    def auth_google_callback(
+        request: Request,
+        code: str | None = Query(default=None),
+        state: str | None = Query(default=None),
+        error: str | None = Query(default=None),
+        error_description: str | None = Query(default=None),
+    ) -> Any:
+        return _auth_browser_callback(
+            request=request,
+            code=code,
+            state=state,
+            error=error,
+            error_description=error_description,
+        )
 
     @app.get("/api/v1/auth/session")
     def auth_session(request: Request) -> dict[str, Any]:

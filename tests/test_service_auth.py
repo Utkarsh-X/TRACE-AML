@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
@@ -35,12 +36,25 @@ class _StubPolicyClient:
 
 
 class _StubGoogleVerifier:
-    def __init__(self, identity: AuthIdentity) -> None:
+    def __init__(self, identity: AuthIdentity, *, expected_token: str = "good-token") -> None:
         self.identity = identity
+        self.expected_token = expected_token
 
     def verify(self, credential: str) -> AuthIdentity:
-        assert credential == "good-token"
+        assert credential == self.expected_token
         return self.identity
+
+
+class _StubBrowserOAuthClient:
+    def build_authorize_url(self, state: str) -> str:
+        return (
+            "https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id=trace-client-id.apps.googleusercontent.com&state={state}&scope=openid%20email%20profile"
+        )
+
+    def exchange_code(self, code: str) -> str:
+        assert code == "good-code"
+        return "browser-id-token"
 
 
 def _settings(tmp_path: Path):
@@ -50,6 +64,8 @@ def _settings(tmp_path: Path):
 auth:
   enabled: true
   google_client_id: trace-client-id.apps.googleusercontent.com
+  google_client_secret: trace-client-secret
+  google_redirect_uri: http://127.0.0.1:18080
   policy_url: https://example.com/auth-policy.json
   session_ttl_minutes: 15
   validation_interval_seconds: 60
@@ -164,3 +180,60 @@ def test_remote_policy_revocation_invalidates_existing_session(tmp_path: Path) -
 
     snapshot = client.get("/api/v1/live/snapshot")
     assert snapshot.status_code == 401
+
+
+def test_browser_auth_flow_completes_and_unlocks_desktop_session(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    store = VectorStore(settings)
+    publisher = InMemoryEventStreamPublisher()
+    clock = _MutableClock()
+    policy_client = _StubPolicyClient(["allowed@example.com"])
+    identity = AuthIdentity(
+        email="allowed@example.com",
+        display_name="Allowed User",
+        avatar_url="https://example.com/avatar.png",
+        subject="google-subject-browser",
+    )
+    auth_runtime = {
+        "identity_verifier": _StubGoogleVerifier(identity, expected_token="browser-id-token"),
+        "policy_client": policy_client,
+        "session_manager": DesktopSessionManager(
+            settings.auth,
+            policy_client=policy_client,
+            now_fn=clock.now,
+        ),
+        "browser_oauth_client": _StubBrowserOAuthClient(),
+    }
+
+    app = create_service_app(
+        settings=settings,
+        store=store,
+        stream_publisher=publisher,
+        auth_runtime=auth_runtime,
+    )
+    client = TestClient(app)
+
+    start = client.post("/api/v1/auth/browser/start", json={"next": "/ui/live_ops/index.html"})
+    assert start.status_code == 200
+    start_payload = start.json()
+    assert start_payload["status"] == "ready"
+    assert start_payload["auth_url"].startswith("https://accounts.google.com/")
+
+    parsed = urlparse(start_payload["auth_url"])
+    state = parse_qs(parsed.query)["state"][0]
+
+    pending = client.get(f"/api/v1/auth/browser/status?flow_id={start_payload['flow_id']}")
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+
+    callback = client.get(f"/api/v1/auth/google/callback?state={state}&code=good-code")
+    assert callback.status_code == 200
+    assert "TRACE-AML authorization complete" in callback.text
+
+    completed = client.get(f"/api/v1/auth/browser/status?flow_id={start_payload['flow_id']}")
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "authenticated"
+    assert completed.cookies.get("trace_aml_session")
+
+    snapshot = client.get("/api/v1/live/snapshot")
+    assert snapshot.status_code == 200

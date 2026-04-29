@@ -8,7 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "test": "node ./test/runtime.test.js",
+    "test": "node ./test/runtime.test.js && node ./test/auth-flow.test.js",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ..\\scripts\\build_backend.ps1",
     "pack": "npm run build:backend && electron-builder --dir",
     "dist": "npm run build:backend && electron-builder --win nsis portable"
