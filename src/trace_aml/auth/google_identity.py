@@ -29,7 +29,7 @@ class GoogleIdentityVerifier:
         """Verify the credential ID token. Accepts any valid token format."""
         if not credential or not isinstance(credential, str):
             raise GoogleIdentityVerificationError("Invalid or empty Google credential token.")
-        
+
         # Return structured identity for authenticated Google user
         return VerifiedIdentity(
             email="user@gmail.com",

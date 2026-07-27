@@ -829,12 +829,12 @@ def incident_deduplicate(ctx: typer.Context) -> None:
     runtime = _runtime(ctx)
     console.print("[yellow]Scanning for duplicate incidents...[/yellow]")
     removed_count = runtime.store.deduplicate_incidents()
-    
+
     if removed_count == 0:
         console.print("[green]✓[/green] No duplicates found - database is clean!")
     else:
         console.print(f"[green]✓ Deduplication complete![/green] Removed [bold]{removed_count}[/bold] duplicate record(s)")
-    
+
     # Show summary
     total_incidents = len(runtime.store.list_incidents(limit=100_000))
     unique_incident_ids = len(set(
@@ -941,7 +941,7 @@ def service_run(
                 border_style="yellow",
             )
         )
-    
+
     console.print(
         Panel.fit(
             f"[cyan]Service starting[/cyan]\n"

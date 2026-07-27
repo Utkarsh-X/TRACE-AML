@@ -72,7 +72,7 @@ def test_deduplicate_incidents_removes_duplicates(tmp_path: Path) -> None:
 
     # Run deduplication
     removed = store.deduplicate_incidents()
-    
+
     # Verify duplicates are removed
     assert removed == 1, "Should have removed 1 duplicate record"
     rows = store._query_rows(store.incidents, where="incident_id = 'INC-TEST001'", limit=100)
@@ -125,7 +125,7 @@ def test_deduplicate_incidents_preserves_latest(tmp_path: Path) -> None:
     # Verify the newer record is preserved
     rows = store._query_rows(store.incidents, where="incident_id = 'INC-TEST002'", limit=100)
     assert len(rows) == 1, "Should have 1 incident after deduplication"
-    
+
     # Check that the latest record was kept (contains ALT-2)
     record = rows[0]
     alert_ids = json.loads(record.get("alert_ids", "[]"))
@@ -153,6 +153,6 @@ def test_deduplicate_incidents_no_action_when_no_duplicates(tmp_path: Path) -> N
 
     # Run deduplication
     removed = store.deduplicate_incidents()
-    
+
     # Should return 0 since there are no duplicates
     assert removed == 0, "Should remove 0 records when there are no duplicates"

@@ -976,17 +976,17 @@ class VectorStore:
         payload["last_action_at"] = str(payload.get("last_action_at", ""))
         row = self._filtered_row(self.incidents, payload)
         escaped = self._escape(incident.incident_id)
-        
+
         # Delete any existing incidents with this ID
         # Lance delete is synchronous but we verify the result
         try:
             self.incidents.delete(f"incident_id = '{escaped}'")
         except Exception:
             pass  # Safe to continue if delete fails (no matching record)
-        
+
         # Add the new incident record
         self.incidents.add([row])
-        
+
         # Verify we don't have duplicates (safety check)
         # This prevents the delete+add race condition from causing duplicates
         existing = self._query_rows(self.incidents, where=f"incident_id = '{escaped}'", limit=100)
@@ -1459,7 +1459,7 @@ class VectorStore:
 
     def merge_entities(self, source_entity_id: str, target_entity_id: str) -> bool:
         """Merge source entity into target entity.
-        
+
         Moves all events, alerts, and incidents from source to target.
         If target already has an open incident, merges alerts and closes source incident.
         Returns True if successful.
@@ -1510,23 +1510,23 @@ class VectorStore:
             for s_inc in source_incidents:
                 s_id = str(s_inc.get("incident_id", ""))
                 s_id_esc = self._escape(s_id)
-                
+
                 if str(s_inc.get("status", "")).lower() == IncidentStatus.open.value and open_target:
                     # Merge alerts into target and close source incident
                     t_alerts = self._parse_json_list(open_target.get("alert_ids", "[]"))
                     s_alerts = self._parse_json_list(s_inc.get("alert_ids", "[]"))
                     merged_alerts = list(set(t_alerts + s_alerts))
-                    
+
                     # Update target incident object
                     open_target["alert_ids"] = merged_alerts
                     open_target["alert_count"] = len(merged_alerts)
-                    
+
                     # Update last seen time if source is newer
                     s_last = str(s_inc.get("last_seen_time", ""))
                     t_last = str(open_target.get("last_seen_time", ""))
                     if s_last > t_last:
                         open_target["last_seen_time"] = s_last
-                    
+
                     # Persist target update
                     target_model = IncidentRecord(
                         incident_id=str(open_target.get("incident_id", "")),
@@ -1541,7 +1541,7 @@ class VectorStore:
                         last_action_at=str(open_target.get("last_action_at", ""))
                     )
                     self.update_incident(target_model)
-                    
+
                     # Close source incident with audit action
                     self.close_incident(s_id)
                     self.insert_action(ActionRecord(
@@ -1565,7 +1565,7 @@ class VectorStore:
             if source_entity_id.startswith("UNK"):
                 self.delete_unknown_entity(source_entity_id)
                 logger.info("Deleted source unknown entity {}", source_entity_id)
-            
+
             return True
         except Exception as exc:
             logger.error("Merge failed: {} -> {}: {}", source_entity_id, target_entity_id, exc)
@@ -1576,34 +1576,34 @@ class VectorStore:
         profile_rows = self._query_rows(self.unknown_profiles, where=f"entity_id = '{self._escape(entity_id)}'", limit=1)
         if not profile_rows:
             return []
-        
+
         source_vec = np.asarray(profile_rows[0].get("embedding", []), dtype=np.float32)
         if source_vec.shape[0] != EMBEDDING_DIM:
             return []
-        
+
         source_vec = self._normalize_vector(source_vec)
-        
+
         # Compare against all person embeddings
         person_embeddings = self._query_rows(self.embeddings, limit=100_000)
         persons = self.list_persons()
         person_map = {p["person_id"]: p for p in persons}
-        
+
         results: dict[str, float] = {}
         for row in person_embeddings:
             p_id = row.get("person_id", "")
             if not p_id:
                 continue
-            
+
             target_vec = np.asarray(row.get("embedding", []), dtype=np.float32)
             if target_vec.shape[0] != EMBEDDING_DIM:
                 continue
-            
+
             target_vec = self._normalize_vector(target_vec)
             similarity = float(np.dot(source_vec, target_vec))
-            
+
             if similarity >= threshold:
                 results[p_id] = max(results.get(p_id, 0.0), similarity)
-        
+
         # Format output
         output = []
         for p_id, sim in results.items():
@@ -1614,7 +1614,7 @@ class VectorStore:
                 "category": p.get("category", "unknown"),
                 "similarity": sim,
             })
-            
+
         return sorted(output, key=lambda x: x["similarity"], reverse=True)
 
     def deduplicate_incidents(self) -> int:
@@ -1622,13 +1622,13 @@ class VectorStore:
 
         This method detects and removes duplicate incident_id records, keeping
         only the most recently updated one. Returns the count of deduplicated records removed.
-        
+
         The duplication issue occurs when multiple incidents share the same incident_id,
         which can happen due to race conditions in the create_incident() method.
         """
         all_incidents = self._query_rows(self.incidents, limit=100_000)
         incident_groups: dict[str, list[dict]] = {}
-        
+
         # Group incidents by incident_id
         for row in all_incidents:
             iid = str(row.get("incident_id", ""))
@@ -1636,7 +1636,7 @@ class VectorStore:
                 if iid not in incident_groups:
                     incident_groups[iid] = []
                 incident_groups[iid].append(row)
-        
+
         deduped_count = 0
         for incident_id, duplicates in incident_groups.items():
             if len(duplicates) > 1:
@@ -1644,7 +1644,7 @@ class VectorStore:
                 # Delete ALL duplicates and keep only one (most recently updated)
                 escaped = self._escape(incident_id)
                 self.incidents.delete(f"incident_id = '{escaped}'")
-                
+
                 # Re-add only the most recent one
                 # Sort by last_seen_time, descending
                 latest = max(
@@ -1654,7 +1654,7 @@ class VectorStore:
                 self.incidents.add([latest])
                 deduped_count += len(duplicates) - 1
                 logger.info("Deduped incident {} - removed {} duplicate records", incident_id, len(duplicates) - 1)
-        
+
         if deduped_count > 0:
             logger.warning("Deduplication complete: removed {} duplicate incident records", deduped_count)
         return deduped_count

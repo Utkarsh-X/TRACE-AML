@@ -265,7 +265,7 @@ class EmailHandler(BaseActionHandler):
     <h1>TRACE-AML</h1>
     <div class="sub">FORENSIC SECURITY ALERT</div>
   </div>
-  
+
   <div style="margin-bottom:20px;">{sev_badge}</div>
 
   <table>

@@ -386,11 +386,11 @@ def create_service_app(
     # Add geo and quality routers
     from trace_aml.service.geo_api import create_geo_router
     from trace_aml.service.quality_api import create_quality_router
-    
+
     if session is not None and hasattr(session, 'recognizer'):
         geo_router = create_geo_router(settings, store)
         app.include_router(geo_router)
-        
+
         quality_router = create_quality_router(settings, store, session.recognizer)
         app.include_router(quality_router)
 
@@ -792,7 +792,7 @@ def create_service_app(
             for k, v in rec.items():
                 if hasattr(settings.recognition, k):
                     setattr(settings.recognition, k, v)
-        
+
         if "rules" in payload:
             rul = payload["rules"]
             for k, v in rul.items():
@@ -804,7 +804,7 @@ def create_service_app(
                                 setattr(sub, sk, sv)
                     else:
                         setattr(settings.rules, k, v)
-        
+
         if "actions" in payload:
             act = payload["actions"]
             if "enabled" in act:
@@ -1247,7 +1247,7 @@ def create_service_app(
                 raise HTTPException(status_code=404, detail="Underlying person not found")
             from trace_aml.core.models import PersonCategory, PersonLifecycleStatus, PersonRecord
             from datetime import datetime, timezone
-            
+
             cat = payload.category if payload.category is not None else current.get("category", "criminal")
             updated = PersonRecord(
                 person_id=current["person_id"],
@@ -1286,12 +1286,12 @@ def create_service_app(
                 from trace_aml.pipeline.collect import person_image_dir
                 import uuid
                 from datetime import datetime, timezone
-                
+
                 existing_ids = [p["person_id"] for p in store.list_persons()]
                 cat = payload.category or "criminal"
                 new_person_id = next_person_id(PersonCategory(cat), existing_ids)
                 now = datetime.now(timezone.utc).isoformat()
-                
+
                 record = PersonRecord(
                     person_id=new_person_id,
                     name=payload.name,
@@ -1309,7 +1309,7 @@ def create_service_app(
                 )
                 store.add_or_update_person(record)
                 person_image_dir(settings, new_person_id)
-                
+
                 profiles = store._query_rows(store.unknown_profiles, where=f"entity_id = '{store._escape(entity_id)}'")
                 records = []
                 for p in profiles:
@@ -1322,7 +1322,7 @@ def create_service_app(
                         embedding=[float(v) for v in p.get("embedding", [])]
                     ))
                 store.replace_person_embeddings(new_person_id, records)
-                
+
                 # ── Unified ID: entity_id === person_id for all known entities ───
                 # The old design kept entity_id="UNK001" and created person_id="PRM002"
                 # as separate records, causing the Enrollment page to show "PRM002"
@@ -1334,7 +1334,7 @@ def create_service_app(
                 # After this operation entity_id === person_id across all tables.
                 from trace_aml.core.models import EntityType, EntityStatus
                 old_entity_row = store.get_entity(entity_id) or {}
-                
+
                 # Step 1: Create the new canonical entity record (entity_id = person_id)
                 store.ensure_entity(
                     entity_id=new_person_id,
@@ -1343,7 +1343,7 @@ def create_service_app(
                     source_person_id=new_person_id,
                     last_seen_at=old_entity_row.get("last_seen_at"),
                 )
-                
+
                 # Step 2: Transfer portrait from old entity_id to new entity_id.
                 # IMPORTANT: DataVault is content-addressed (SHA-256 blobs).
                 # put_portrait writes the same blob file for both entity IDs.
@@ -1492,11 +1492,11 @@ def create_service_app(
     @app.post("/api/v1/incidents/deduplicate")
     def incident_deduplicate() -> dict[str, Any]:
         """Remove duplicate incident records from the database.
-        
+
         This endpoint triggers the deduplication process to remove any
         duplicate incident_id records that may have been created due to
         non-atomic operations.
-        
+
         Returns a summary of the deduplication operation.
         """
         removed_count = store.deduplicate_incidents()
@@ -1804,7 +1804,7 @@ def create_service_app(
         handler = PdfReportHandler(settings, store)
         context: dict[str, Any] = {}
         ok, reason = handler.execute(test_incident, ActionTrigger.on_create, context)
-        
+
         if not ok:
             return {"status": "failed", "reason": reason}
 
@@ -1812,7 +1812,7 @@ def create_service_app(
         html_path_str = context.get("html_report_path", "")
         pdf_url = ""
         html_url = ""
-        
+
         # Resolve HTML URL (always exists if generation didn't crash)
         if html_path_str:
             try:
