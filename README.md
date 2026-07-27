@@ -219,7 +219,7 @@ $$S = G \cdot q \quad \text{where } S \in \mathbb{R}^{N_{\text{total}}}$$
 
 Following matrix multiplication, top-$k$ candidates are extracted in $O(N)$ average time using C-level partial sorting (`np.argpartition`):
 
-$$\text{Top-}k = \operatorname{argpartition}(S, -k)_{[-k:]}$$
+$$\text{Top-}k = \text{argpartition}(S, -k)_{[-k:]}$$
 
 ### 3. Stochastic Jitter Reduction via Exponential Moving Average (EMA)
 To stabilize frame-to-frame photometric variance, confidence scores for a tracked identity $T_i$ at frame $t$ are smoothed using an Exponential Moving Average ($\alpha = 0.6$):
@@ -228,7 +228,7 @@ $$C_t = \alpha \cdot C_{\text{raw}, t} + (1 - \alpha) \cdot C_{t-1}$$
 
 Final identity resolution requires both the smoothed confidence $C_t$ to exceed the dynamic acceptance threshold $\tau_{\text{accept}}$ and the plurality vote count within an $N$-frame sliding window ($N=6$) to satisfy:
 
-$$\operatorname{VoteCount}(\text{PersonID}) \ge N_{\text{min\_votes}}$$
+$$\text{VoteCount}(\text{PersonID}) \ge N_{\text{min-votes}}$$
 
 ### 4. Multi-Signal Spatial Track Scoring
 Spatial continuity across consecutive video frames is calculated using a weighted multi-signal cost function:
