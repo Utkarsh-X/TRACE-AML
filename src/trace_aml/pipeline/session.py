@@ -154,12 +154,12 @@ class RecognitionSession:
         with self._camera_lock:
             if self._camera_enabled:
                 return {"status": "already_enabled", "message": "Camera is already enabled"}
-            
+
             try:
                 # Create fresh queues for this session
                 self._frame_queue = queue.Queue(maxsize=self.settings.pipeline.frame_queue_size)
                 self._result_queue = queue.Queue(maxsize=self.settings.pipeline.result_queue_size)
-                
+
                 # Create and start capture + inference
                 self._capture = CameraCapture(self.settings, self._frame_queue)
                 self._inference = InferenceWorker(
@@ -169,7 +169,7 @@ class RecognitionSession:
                     self._result_queue,
                     settings=self.settings,
                 )
-                
+
                 self._capture.start()
                 self._inference.start()
                 self._camera_enabled = True
@@ -198,12 +198,12 @@ class RecognitionSession:
         with self._camera_lock:
             if not self._camera_enabled:
                 return {"status": "already_disabled", "message": "Camera is already disabled"}
-            
+
             try:
                 if self._inference is not None:
                     self._inference.stop()
                     self._inference = None
-                
+
                 if self._capture is not None:
                     self._capture.stop()
                     self._capture = None
@@ -214,7 +214,7 @@ class RecognitionSession:
                 self._frame_queue = None
                 self._result_queue = None
                 self._camera_enabled = False
-                
+
                 return {
                     "status": "disabled",
                     "message": "Camera stopped successfully",
@@ -253,10 +253,10 @@ class RecognitionSession:
                     "status": "error",
                     "message": "Cannot enable recognition: camera is not enabled. Enable camera first.",
                 }
-            
+
             if self._recognition_enabled:
                 return {"status": "already_enabled", "message": "Recognition is already enabled"}
-            
+
             try:
                 # Preflight recognizer startup so missing packaged dependencies
                 # fail here instead of leaving the UI stuck in a fake enabled state.
@@ -273,7 +273,7 @@ class RecognitionSession:
                         settings=self.settings,
                         on_fatal_error=self._handle_inference_fatal_error,
                     )
-                
+
                 self._inference.start()
                 self._recognition_enabled = True
                 self._recognition_error = ""
@@ -306,15 +306,15 @@ class RecognitionSession:
         with self._camera_lock:
             if not self._recognition_enabled:
                 return {"status": "already_disabled", "message": "Recognition is already disabled"}
-            
+
             try:
                 if self._inference is not None:
                     self._inference.stop()
                     self._inference = None
-                
+
                 self._recognition_enabled = False
                 self._recognition_error = ""
-                
+
                 return {
                     "status": "disabled",
                     "message": "Face recognition stopped",
@@ -969,7 +969,7 @@ class RecognitionSession:
                     # Camera on, but recognition off - skip processing and keep polling.
                     time.sleep(0.1)
                     continue
-                
+
                 # Both camera AND recognition are enabled, try to get a result packet
                 try:
                     packet: InferencePacket = result_queue.get(timeout=0.5)
@@ -980,7 +980,7 @@ class RecognitionSession:
                 fps = 0.92 * fps + 0.08 * (1.0 / max(1e-6, now - prev))
                 prev = now
                 self.last_latency_ms = max(0.0, (now - packet.captured_at) * 1000.0)
-                
+
                 # Get queue depths (with lock to be safe)
                 with self._camera_lock:
                     self.last_frame_queue_depth = self._frame_queue.qsize() if self._frame_queue else 0

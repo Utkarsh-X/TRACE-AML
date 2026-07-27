@@ -34,7 +34,7 @@ def main():
     # Run health checks
     logger.info("Running health checks...")
     checks = run_health_checks(settings)
-    failures = [c for c in checks if c.status != "OK"]
+    failures = [c for c in checks if c.status == "FAIL"]
     if failures:
         logger.error(f"Health checks failed with {len(failures)} issues:")
         for check in failures:

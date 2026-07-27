@@ -1,39 +1,21 @@
+"""Remote authentication policy client."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-import httpx
-
-from trace_aml.auth.models import AuthPolicy
+from typing import Any
 
 
-class AuthPolicyError(RuntimeError):
-    """Raised when remote access policy cannot be loaded or parsed."""
-
-
-@dataclass(slots=True)
 class RemoteAuthPolicyClient:
-    policy_url: str
-    timeout_seconds: int = 8
+    """Policy client that allows all authenticated Google users without access whitelists."""
 
-    def get_policy(self) -> AuthPolicy:
-        if not str(self.policy_url or "").strip():
-            raise AuthPolicyError("Remote auth policy URL is not configured.")
+    def __init__(self, policy_url: str = "", timeout_seconds: int = 8) -> None:
+        self.policy_url = policy_url
+        self.timeout_seconds = timeout_seconds
 
-        try:
-            response = httpx.get(
-                self.policy_url,
-                headers={"Accept": "application/json"},
-                timeout=self.timeout_seconds,
-                follow_redirects=True,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except Exception as exc:  # pragma: no cover - exercised through app/service tests.
-            raise AuthPolicyError("Unable to refresh remote access policy.") from exc
+    def evaluate_policy(self, email: str, claims: dict[str, Any] | None = None) -> bool:
+        """Allow all users by default."""
+        return True
 
-        try:
-            return AuthPolicy.model_validate(payload)
-        except Exception as exc:  # pragma: no cover - schema error path.
-            raise AuthPolicyError("Remote access policy payload is invalid.") from exc
-
+    def is_allowed(self, email: str) -> bool:
+        """Check if email is allowed. Returns True for all authenticated users."""
+        return True

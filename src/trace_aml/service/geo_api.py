@@ -120,11 +120,11 @@ def search_cities(country_code: str, query: str) -> list[dict[str, Any]]:
     """Autocomplete cities by query."""
     if not query or len(query) < 2:
         return []
-    
+
     query_lower = query.lower()
     cities = CITIES_BY_COUNTRY.get(country_code, [])
     matches = [c for c in cities if query_lower in c["name"].lower()]
-    
+
     # Sort by relevance (starts with query first, then contains)
     return sorted(
         matches,

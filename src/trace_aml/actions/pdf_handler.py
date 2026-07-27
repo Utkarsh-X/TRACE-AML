@@ -1077,7 +1077,7 @@ class PdfReportHandler(BaseActionHandler):
             incident.severity.value if hasattr(incident.severity, "value")
             else incident.severity
         ).lower()
-        
+
         # Monochromatic severity logic for fallback
         if severity in ("critical", "extreme", "emergency"):
             sev_rgb = (211, 47, 47) # Red
@@ -1092,27 +1092,28 @@ class PdfReportHandler(BaseActionHandler):
 
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
-        W = lambda: pdf.w - pdf.l_margin - pdf.r_margin
+        def W():
+            return pdf.w - pdf.l_margin - pdf.r_margin
 
         def header():
             pdf.set_fill_color(*BG)
             pdf.rect(0, 0, pdf.w, pdf.h, "F") # Fill entire page background
-            
+
             pdf.set_fill_color(19, 19, 19)
             pdf.rect(pdf.l_margin, 8, W(), 22, "F")
             pdf.set_draw_color(*FG)
             pdf.line(pdf.l_margin, 8, pdf.l_margin, 30)
-            
+
             pdf.set_xy(pdf.l_margin + 5, 12)
             pdf.set_font("Helvetica", "B", 14)
             pdf.set_text_color(*FG)
             pdf.cell(W() / 2, 6, "TRACE-AML", ln=False)
-            
+
             pdf.set_font("Helvetica", "", 7)
             pdf.set_text_color(*GREY)
             pdf.set_x(pdf.l_margin + W() / 2)
             pdf.cell(W() / 2 - 5, 6, f"GENERATED: {generated_at.strftime('%Y-%m-%d %H:%M UTC')}", align="R", ln=True)
-            
+
             pdf.set_xy(pdf.l_margin + 5, 20)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(*sev_rgb)

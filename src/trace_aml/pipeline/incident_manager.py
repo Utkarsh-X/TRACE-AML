@@ -79,12 +79,10 @@ class IncidentManager:
             )
             self.store.update_incident(updated)
 
-            # Treat as on_create if:
-            #  a) incident has never been actioned, OR
-            #  b) entity was absent long enough (re-notification gap expired)
-            if not existing_last_action:
+            if not was_recent and str(active.get("last_action_at", "")):
                 return updated, "on_create"
             return updated, "on_update"
+
 
         created = IncidentRecord(
             incident_id=new_incident_id(),

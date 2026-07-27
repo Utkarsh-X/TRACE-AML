@@ -61,12 +61,12 @@ class RulesEngine:
 
     def _build_alert(self, event: EventRecord, alert_type: AlertType, count: int) -> AlertRecord:
         severity = self._map_severity(event, alert_type, count)
-        # We provide a clean reason without the type prefix here, 
+        # We provide a clean reason without the type prefix here,
         # as the incident manager or UI will add the type context.
         reason = f"Detected with {count} events"
         if alert_type == AlertType.instability:
             reason = f"Confidence instability across {count} events"
-        
+
         return AlertRecord(
             alert_id=new_alert_id(),
             entity_id=event.entity_id,

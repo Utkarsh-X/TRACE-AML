@@ -92,11 +92,14 @@ class ArcFaceRecognizer:
         # ─────────────────────────────────────────────────────────────────────
 
         try:
+            fa_kwargs: dict[str, Any] = {
+                "name": self.settings.recognition.model_name,
+                "providers": providers,
+            }
+            if os.path.exists(os.path.join(".", "models", self.settings.recognition.model_name)):
+                fa_kwargs["root"] = "."
             with self._suppress_startup_output():
-                self._app = insightface.app.FaceAnalysis(
-                    name=self.settings.recognition.model_name,
-                    providers=providers,
-                )
+                self._app = insightface.app.FaceAnalysis(**fa_kwargs)
                 self._app.prepare(
                     ctx_id=self.settings.gpu.cuda_device_id,
                     det_size=tuple(self.settings.recognition.det_size),

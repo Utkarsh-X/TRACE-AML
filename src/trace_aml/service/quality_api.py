@@ -10,7 +10,7 @@ from PIL import Image
 def assess_image_quality(image_data: bytes) -> dict[str, Any]:
     """
     Assess quality of a raw image (JPEG/PNG).
-    
+
     Returns:
         {
             "quality_score": 0.0-1.0,
@@ -27,28 +27,28 @@ def assess_image_quality(image_data: bytes) -> dict[str, Any]:
         # Load image from bytes
         img = Image.open(io.BytesIO(image_data)).convert("L")  # Grayscale
         arr = np.array(img, dtype=np.float32)
-        
+
         # 1. Sharpness (Laplacian variance)
         from scipy.ndimage import laplace
         laplacian = laplace(arr)
         sharpness = float(np.var(laplacian))
         sharpness_norm = min(100.0, sharpness / 10.0)  # Normalize to ~0-100
-        
+
         # 2. Brightness (mean pixel value)
         brightness = float(np.mean(arr))
-        
+
         # 3. Contrast (standard deviation)
         contrast = float(np.std(arr))
-        
+
         # Thresholds
         SHARPNESS_THRESHOLD = 55.0
         BRIGHTNESS_THRESHOLD = (45.0, 220.0)
         CONTRAST_THRESHOLD = 15.0
-        
+
         # Evaluate
         feedback = []
         passed = True
-        
+
         # Sharpness check
         sharpness_pass = sharpness_norm >= SHARPNESS_THRESHOLD
         feedback.append({
@@ -59,7 +59,7 @@ def assess_image_quality(image_data: bytes) -> dict[str, Any]:
             "message": "Image is sharp" if sharpness_pass else "Image is blurry"
         })
         passed = passed and sharpness_pass
-        
+
         # Brightness check
         brightness_pass = (BRIGHTNESS_THRESHOLD[0] <= brightness <= BRIGHTNESS_THRESHOLD[1])
         brightness_status = "good" if brightness_pass else ("dark" if brightness < BRIGHTNESS_THRESHOLD[0] else "overexposed")
@@ -71,7 +71,7 @@ def assess_image_quality(image_data: bytes) -> dict[str, Any]:
             "message": "Lighting is optimal" if brightness_pass else f"Lighting is {brightness_status}"
         })
         passed = passed and brightness_pass
-        
+
         # Contrast check (helps detect faces)
         contrast_pass = contrast >= CONTRAST_THRESHOLD
         feedback.append({
@@ -82,14 +82,14 @@ def assess_image_quality(image_data: bytes) -> dict[str, Any]:
             "message": "Good contrast" if contrast_pass else "Low contrast - may affect face detection"
         })
         passed = passed and contrast_pass
-        
+
         # Overall quality score (0-1)
         quality_score = (
             (min(1.0, sharpness_norm / SHARPNESS_THRESHOLD) * 0.4) +
             (1.0 if brightness_pass else 0.0) * 0.3 +
             (min(1.0, contrast / (CONTRAST_THRESHOLD * 3)) * 0.3)
         )
-        
+
         return {
             "quality_score": round(quality_score, 2),
             "sharpness": round(sharpness_norm, 1),
@@ -110,11 +110,11 @@ def assess_image_quality(image_data: bytes) -> dict[str, Any]:
 def quick_face_detection(image_data: bytes, recognizer) -> dict[str, Any]:
     """
     Quick face detection on frame (for camera preview).
-    
+
     Args:
         image_data: Raw JPEG/PNG bytes
         recognizer: ArcFaceRecognizer instance
-    
+
     Returns:
         {
             "faces_detected": 1,
@@ -130,22 +130,22 @@ def quick_face_detection(image_data: bytes, recognizer) -> dict[str, Any]:
         # Load image
         img = Image.open(io.BytesIO(image_data))
         frame_array = np.array(img)
-        
+
         # Detect faces using recognizer
         det_model = recognizer.det_model
         bboxes = det_model.detect(frame_array)
-        
+
         if bboxes is None or len(bboxes) == 0:
             return {
                 "faces_detected": 0,
                 "message": "No face detected",
             }
-        
+
         # Get largest face
         best_face = max(bboxes, key=lambda b: b[2] * b[3])  # Max by area
         bbox = best_face[:4]  # [x1, y1, x2, y2]
         score = float(best_face[4])
-        
+
         # Calculate metrics
         x1, y1, x2, y2 = [int(v) for v in bbox]
         w = x2 - x1
@@ -153,11 +153,11 @@ def quick_face_detection(image_data: bytes, recognizer) -> dict[str, Any]:
         face_area = w * h
         frame_area = frame_array.shape[0] * frame_array.shape[1]
         face_ratio = (face_area / frame_area) if frame_area > 0 else 0.0
-        
+
         # Center of face
         cx = (x1 + x2) // 2
         cy = (y1 + y2) // 2
-        
+
         return {
             "faces_detected": len(bboxes),
             "largest_face": {
@@ -187,7 +187,7 @@ def create_quality_router(settings: "Settings", store: "VectorStore", recognizer
     async def assess_frame_quality(file: UploadFile = File(...)) -> dict[str, Any]:
         """
         Assess quality of uploaded frame (from camera capture).
-        
+
         Returns quality metrics for real-time feedback in enrollment UI.
         """
         image_data = await file.read()
@@ -198,7 +198,7 @@ def create_quality_router(settings: "Settings", store: "VectorStore", recognizer
     async def quick_detect_faces(file: UploadFile = File(...)) -> dict[str, Any]:
         """
         Quick face detection for camera preview (lightweight).
-        
+
         Returns face bounding boxes and metrics for visualization.
         """
         image_data = await file.read()

@@ -30,12 +30,13 @@ def decide_person_lifecycle(
             enrollment_score=0.0,
         )
 
-    if embeddings_count == 0 or valid_images == 0:
+    if valid_images == 0:
         return LifecycleDecision(
             state=PersonLifecycleStatus.blocked,
             reason="no_valid_embeddings",
             enrollment_score=avg_quality,
         )
+
 
     if embeddings_count < quality_cfg.min_embeddings_ready:
         return LifecycleDecision(
