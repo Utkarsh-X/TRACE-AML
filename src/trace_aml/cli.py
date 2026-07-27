@@ -1,7 +1,5 @@
 """TRACE-AML CLI entrypoint."""
 
-from __future__ import annotations
-
 import shutil
 import sys
 import threading
