@@ -8,7 +8,7 @@ from trace_aml.recognizers.arcface import ArcFaceRecognizer
 
 def test_ensure_app_suppresses_insightface_startup_output(monkeypatch, capsys) -> None:
     class _FakeFaceAnalysis:
-        def __init__(self, name, providers):
+        def __init__(self, name, providers, **kwargs):
             print(f"Applied providers: {providers}")
 
         def prepare(self, ctx_id, det_size):

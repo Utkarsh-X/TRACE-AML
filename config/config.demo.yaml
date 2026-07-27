@@ -54,13 +54,13 @@ notifications:
     attach_pdf: false
     enabled: true
     recipient_addresses:
-    - utkarshchandra170@gmail.com
-    sender_address: utkarshchandra170@gmail.com
+    - alerts@example.com
+    sender_address: sender@example.com
     sender_name: TRACE-AML Security
-    smtp_host: smtp.gmail.com
-    smtp_password: ENC:AQGartDFdyGfVx2DuoLTfHnaULLS5IQGV8J3sYmCKdhFQ1ValPWzCehK2vhNoNltew==
+    smtp_host: smtp.example.com
+    smtp_password: ""
     smtp_port: 587
-    smtp_user: utkarshchandra170@gmail.com
+    smtp_user: sender@example.com
     use_tls: false
   pdf_report:
     enabled: true
@@ -72,7 +72,7 @@ notifications:
     bridge_url: http://localhost:3001
     enabled: true
     recipient_numbers:
-    - '917007111506'
+    - '15550199'
     send_pdf: false
     send_text: false
 pipeline:

@@ -51,3 +51,12 @@ include = ["trace_aml*"]
 minversion = "8.0"
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "F401", "F841"]
+
